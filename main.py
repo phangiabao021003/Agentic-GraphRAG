@@ -10,7 +10,7 @@ from agents.agent_history import ContextAwareAgent
 from qdrant_client import QdrantClient
 from langchain.embeddings.ollama import OllamaEmbeddings
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
-
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 load_dotenv()
 
@@ -19,7 +19,8 @@ client = OpenAI(
     base_url='http://localhost:11434/v1',
     api_key='dolphin-llama3'
 )
-embeddings = OllamaEmbeddings(model="bge-m3")
+# embeddings = OllamaEmbeddings(model="bge-m3")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
 
@@ -34,13 +35,12 @@ vectordb = QdrantClient(path="C:/Users/bao.phangia/Downloads/Đồ án/vectordb"
 #     embedding=embeddings,
 #     retrieval_mode=RetrievalMode.DENSE,
 # )
-vector_store = QdrantVectorStore(
-    client=vectordb,
-    collection_name="Nutrition",
-    embedding=embeddings,
-    sparse_embedding=sparse_embeddings,
-    retrieval_mode=RetrievalMode.DENSE,
-)
+qdrant = QdrantVectorStore(
+        client=vectordb,
+        collection_name="Nutritionv4",
+        embedding=embeddings,
+        retrieval_mode=RetrievalMode.DENSE
+    )
 password = os.environ.get("NEO4J_PASSWORD")
 driver = GraphDBConnection(
     uri="bolt://localhost:7687",
@@ -97,7 +97,7 @@ while True:
         ask(query,new_query,his_agent,0.5)  
     elif route == "rag":
         print("RAG detected.")
-        context=full_retriever(graph,vector_store,query)
+        context=full_retriever(graph,qdrant,query)
         print(f"""\n###Context:\n {context}""")
         new_query=enhancing_prompt(new_query, context)
         # print(f"""\n###New query:\n {new_query}""")

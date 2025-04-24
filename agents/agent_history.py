@@ -40,6 +40,7 @@ Answer only "YES" if the query relates to or depends on past conversations, othe
     The rewritten query should:
     - PRESERVE the core intent and meaning of the original query
     - Clarify the query to make it more specific and informative for retrieving relevant context
+    - If there is no relevant context, JUST RETURN THE ORIGINAL QUERY
     - Avoid introducing new topics or queries that deviate from the original query
     - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
     Return ONLY the rewritten query text if needed, without any additional formatting or explanations; otherwise, return original query.

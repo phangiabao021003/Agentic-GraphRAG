@@ -19,8 +19,11 @@ text_splitter = RecursiveCharacterTextSplitter(    chunk_size=800,
 chunks = text_splitter.split_documents(grouped_documents)
 # Create a collection with both dense and sparse vectors
 client.create_collection(
-    collection_name="Nutritionv2",
-    vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+    collection_name="Nutrition_hybrid",
+    vectors_config={"dense": VectorParams(size=1024, distance=Distance.COSINE)},
+    sparse_vectors_config={
+        "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
+    },
 )
 
 qdrant = QdrantVectorStore(
@@ -28,7 +31,9 @@ qdrant = QdrantVectorStore(
     collection_name="Nutrition_hybrid",
     embedding=embeddings,
     sparse_embedding=sparse_embeddings,
-    retrieval_mode=RetrievalMode.DENSE
+    retrieval_mode=RetrievalMode.HYBRID,
+    vector_name="dense",
+    sparse_vector_name="sparse",
 )
 uuids = [str(uuid4()) for _ in range(len(chunks))]
 qdrant.add_documents(documents=chunks, ids=uuids)

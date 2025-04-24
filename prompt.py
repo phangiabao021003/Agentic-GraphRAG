@@ -24,7 +24,7 @@ You are a routing agent. Decide whether this user query: "{query}"
 requires retrieving external knowledge via RAG (Retrieval-Augmented Generation).
 Answer only "RAG" if external information is needed or "NO_RAG" if not.
 """
-base_prompt=f"""You are a helpful AI assistant that explains and expresses answer for anything asked by the user in English.
+base_prompt=  lambda query, context:f"""You are a helpful AI assistant that explains and expresses answer for anything asked by the user in English.
 Given the following conversation history and the user's latest query, your task is to:
 1. give answer with detailed explanation with bullets, heading , subheading etc. based on the context only, not on any external information.
 2. always rename the title ,headings, subheading in your answer but keep the meaning same.

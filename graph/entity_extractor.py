@@ -104,7 +104,7 @@ you must give answer with detailed explanation with bullets, heading , subheadin
 always rename the title ,headings, subheading in your answer but keep the meaning same.
 you must follow this  very stricty , dont use anything else other than the given :
 context: {context}
-only use relevant information with the query from the context to answer.
+ONLY use relevant information with the query from the context to answer.
 if no related information found just reply with "The document does not contain the information mentioned in the question"
 answer:
 """
