@@ -1,0 +1,12 @@
+openai
+python-dotenv
+tiktoken
+requests
+pymupdf
+neo4j
+langchain
+langchain-community
+langchain-experimental
+spacy
+-U langchain -neo4j
+--upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib

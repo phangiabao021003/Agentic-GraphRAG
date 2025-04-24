@@ -1,0 +1,23 @@
+# Bỏ qua thư mục Qdrant local
+vectordb/
+
+# Bỏ qua file cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Bỏ qua môi trường ảo
+venv/
+.env/
+
+# Bỏ qua file log
+*.log
+
+# Bỏ qua notebook checkpoint
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# biến môi trường .env
+.env
