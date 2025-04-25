@@ -102,10 +102,13 @@ def enhancing_prompt(query, context):
 user will ask question as: {query}
 you must give answer with detailed explanation with bullets, heading , subheading etc. based on the context only, not on any external information.
 always rename the title ,headings, subheading in your answer but keep the meaning same.
-you must follow this  very stricty , dont use anything else other than the given :
-context: {context}
 ONLY use relevant information with the query from the context to answer.
 if no related information found just reply with "The document does not contain the information mentioned in the question"
-answer:
+you must follow this  very stricty , dont use anything else other than the given context :
+###
+CONTEXT:
+{context}
+###
+ANSWER:
 """
     return base_prompt

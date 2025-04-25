@@ -19,25 +19,24 @@ Answer:
 """
 
 # Prompt dùng để quyết định dùng RAG hay không
-RAG_ROUTER_PROMPT = lambda query: f"""
-You are a routing agent. Decide whether this user query: "{query}"
-requires retrieving external knowledge via RAG (Retrieval-Augmented Generation).
-Answer only "RAG" if external information is needed or "NO_RAG" if not.
+RAG_PROMPT = lambda query,context,history: f"""
+You are a helpful AI assistant that is very good in asking questions from the user.
+user will ask question as: {query}
+you must give answer with detailed explanation with bullets, heading , subheading etc. based on the context and historical conversation only, not on any external information.
+always rename the title ,headings, subheading in your answer but keep the meaning same.
+you must follow this  very stricty , dont use anything else other than the given :
+context: {context}
+ONLY use relevant information with the query from the context to answer.
+if no related information found just reply with "The document does not contain the information mentioned in the question"
+answer:
 """
-base_prompt=  lambda query, context:f"""You are a helpful AI assistant that explains and expresses answer for anything asked by the user in English.
-Given the following conversation history and the user's latest query, your task is to:
-1. give answer with detailed explanation with bullets, heading , subheading etc. based on the context only, not on any external information.
-2. always rename the title ,headings, subheading in your answer but keep the meaning same.
-3. you must follow this  very stricty , don't use anything else other than the context
-4. if no related information found just reply with "The document does not contain the information mentioned in the question"
-
-IMPORTANT: ONLY use relevant information with the query from the context to answer.
-
---- Context ---
-{context}
+LLM_PROMPT=  lambda query, history:f"""You are a helpful AI assistant that improves search queries based on conversation context.
+        Given the following conversation history and the user's latest query, your task is to use the conversation history as context to answer the query if the query mentions, refers to any previous messages in the conversation, or coreference resolution is required. 
         
---- Current Query ---
-{query}
-
-Answer:
+        --- Conversation History ---
+        {history}
+        
+        --- Current Query ---
+        {query}
+        --- Answer ---
 """
