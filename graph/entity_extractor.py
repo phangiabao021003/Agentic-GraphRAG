@@ -98,10 +98,11 @@ def enhancing_prompt(query, context):
     # {context}
     # Query: {query}
     # Answer: """
-    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer for anything asked by the user in English.
-you must give answer with detailed explanation with bullets, heading , subheading etc. 
+    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
+you must give answer with detailed explanation with bullets, heading , subheading etc. based on the CONTEXT.
 always rename the title ,headings, subheading in your answer but keep the meaning same.
-ONLY using information from the provided context to answer the query, do not use any external information.
+Give yourself room to think by extracting relevant passages from the context than use them to answer the query.
+Don't return the thinking, only return the answer.
 if no related information found just reply with "The document does not contain the information mentioned in the question"
 ###
 QUERY: 
@@ -115,7 +116,7 @@ ANSWER:
     return base_prompt
 def rag_prompt(query, context):
 
-    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer for anything asked by the user in English.
+    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
 you must give answer with detailed explanation ONLY based on the context provided.
 ONLY use relevant information with the query from the context to answer.
 if no related information found just reply with "The document does not contain the information mentioned in the question"

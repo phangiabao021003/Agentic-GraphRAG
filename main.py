@@ -27,7 +27,7 @@ sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
 his_agent=ContextAwareAgent(client)
 
-vectordb = QdrantClient(path="C:/Users/bao.phangia/Downloads/Đồ án/vectordb")
+vectordb = QdrantClient(path="D:/Downloads/Agentic-GraphRAG/Agentic-GraphRAG/vectordb")
 # Tạo vector store từ client và collection đã tồn tại
 # vector_store = QdrantVectorStore(
 #     client=vectordb,

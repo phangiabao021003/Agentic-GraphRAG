@@ -1,5 +1,6 @@
 openai
 python-dotenv
+pandas
 tiktoken
 requests
 pymupdf
@@ -8,5 +9,10 @@ langchain
 langchain-community
 langchain-experimental
 spacy
--U langchain -neo4j
---upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+langchain_neo4j
+# --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+qdrant-client 
+fastembed
+keybert
+sentence-transformers
+#python -m spacy download en_core_web_sm
