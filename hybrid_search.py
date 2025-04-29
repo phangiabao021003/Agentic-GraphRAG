@@ -7,7 +7,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from uuid import uuid4
 
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-embeddings = OllamaEmbeddings(model="bge-m3")
+embeddings = OllamaEmbeddings(model="")
 
 # Create a Qdrant client for local storage
 client = QdrantClient(path="C:/Users/bao.phangia/Downloads/Đồ án/vectordb")

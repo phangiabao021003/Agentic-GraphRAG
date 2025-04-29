@@ -2,7 +2,7 @@ from graph.graphdb_connection import GraphDBConnection
 import os
 from agents.agent_router import classify_user_input
 import json
-from graph.entity_extractor import enhancing_prompt,full_retriever
+from graph.entity_extractor import enhancing_prompt,full_retriever,llm_prompt
 from dotenv import load_dotenv
 from openai import OpenAI
 import time
@@ -37,9 +37,12 @@ vectordb = QdrantClient(path="D:/Downloads/Agentic-GraphRAG/Agentic-GraphRAG/vec
 # )
 qdrant = QdrantVectorStore(
         client=vectordb,
-        collection_name="Nutritionv4",
+        collection_name="Nutritionv5",
         embedding=embeddings,
-        retrieval_mode=RetrievalMode.DENSE
+        sparse_embedding=sparse_embeddings,
+        retrieval_mode=RetrievalMode.HYBRID,
+        vector_name="dense",
+        sparse_vector_name="sparse",
     )
 password = os.environ.get("NEO4J_PASSWORD")
 driver = GraphDBConnection(
@@ -62,9 +65,9 @@ driver.close()
 def ask(query,new_query,his_agent,temperature):
     his_agent.add_to_history("user", query)
     response = client.chat.completions.create(
-        model='llama3-chatqa',
+        model='llama3.2',
         messages=[{"role": "user", "content": new_query}],
-        max_tokens=2048,
+        max_tokens=1024,
         stream=True,
         temperature=temperature,
     )
@@ -92,16 +95,16 @@ while True:
     #check history conversation
     if route == "llm":
         print("llm detected.")
-        new_query=enhancing_prompt(new_query, context=None)
-        # print(f"""\n###New query:\n {new_query}""")
-        ask(query,new_query,his_agent,0.5)  
+        new_prompt=llm_prompt(new_query, context=None)
+        print(f"""\n###New prompt:\n {new_prompt}""")
+        ask(query,new_prompt,his_agent,0.5)  
     elif route == "rag":
         print("RAG detected.")
         context=full_retriever(graph,qdrant,query)
-        print(f"""\n###Context:\n {context}""")
-        new_query=enhancing_prompt(new_query, context)
-        # print(f"""\n###New query:\n {new_query}""")
-        ask(query,new_query,his_agent,0.1)  
+        # print(f"""\n###Context:\n {context}""")
+        new_prompt=enhancing_prompt(new_query, context)
+        print(f"""\n###New prompt:\n {new_prompt}""")
+        ask(query,new_prompt,his_agent,0.1)  
     else:
         print("Invalid route. Please check the classification.")
     

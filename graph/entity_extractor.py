@@ -81,8 +81,11 @@ def full_retriever(graph,vector_store,question):
         cleaned_contents.append(f"- {content}")
 
     joined_contents = "\n".join(cleaned_contents)
-    # final_data = f"""Graph data:
-    # {graph_data}
+    # final_data = f"""
+    # ##
+    # Graph data:
+    # {graph_data}`
+    # ##    
     # Vector data:
     # {joined_contents}"""
     return joined_contents
@@ -99,11 +102,11 @@ def enhancing_prompt(query, context):
     # Query: {query}
     # Answer: """
     base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
-you must give answer with detailed explanation with bullets, heading , subheading etc. based on the CONTEXT.
-always rename the title ,headings, subheading in your answer but keep the meaning same.
+you must give answer with detailed explanation based on the CONTEXT as possible.
 Give yourself room to think by extracting relevant passages from the context than use them to answer the query.
 Don't return the thinking, only return the answer.
-if no related information found just reply with "The document does not contain the information mentioned in the question"
+ONLY USING RELEVANT PASSAGES to answer the question.
+if no relevant information found from CONTEXT just reply with "The document does not contain the information mentioned in the question"
 ###
 QUERY: 
 {query}
@@ -111,16 +114,17 @@ QUERY:
 CONTEXT:
 {context}
 ###
+RELEVANT PASSAGES: <extract relevant passages from the context here>
+###
 ANSWER:
 """
     return base_prompt
-def rag_prompt(query, context):
+def llm_prompt(query, context):
 
     base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
-you must give answer with detailed explanation ONLY based on the context provided.
-ONLY use relevant information with the query from the context to answer.
-if no related information found just reply with "The document does not contain the information mentioned in the question"
-you must follow this  very stricty , dont use anything else other than the given context :
+you must give answer with detailed explanation with bullets, heading , subheading etc. based on the CONTEXT.
+always rename the title ,headings, subheading in your answer but keep the meaning same.
+make sure your answers are as explanatory as possible.
 ###
 QUERY: 
 {query}
