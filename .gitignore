@@ -21,3 +21,5 @@ __pycache__/
 
 # biến môi trường .env
 .env
+#credentials.json
+credentials.json

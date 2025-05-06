@@ -21,3 +21,19 @@ def classify_user_input(input: str) -> str:
     )
     result = response.json()
     return result["choices"][0]["message"]["content"].strip().lower()
+def router_task(client,message):
+    prompt= f"""Based on the user query: {message}
+    Your task is determing the require of user in the query into 4 below choices:
+    - create: if the user want to create a new schedule, or add a schedule.
+    - update: if the user want to update a schedule, or change a schedule.
+    - delete: if the user want to delete a schedule, or cancel a schedule.
+    - read: if the user want to read, check a schedule, or ask about a schedule.
+    ONLY return the choice without any other texts, explainations."""
+    response = client.chat.completions.create(
+        model='llama3.1',
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=5,
+        temperature=0.1
+    )
+    result = response.choices[0].message.content.strip().lower()
+    return result

@@ -18,7 +18,8 @@ def get_calendar_credentials():
         ValueError: If GOOGLE_CREDENTIALS_PATH environment variable is not set
         FileNotFoundError: If the credentials file doesn't exist
     """
-    credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH')
+    
+    credentials_path = os.environ.get('GOOGLE_CREDENTIALS_PATH')
 
     if not credentials_path:
         raise ValueError(

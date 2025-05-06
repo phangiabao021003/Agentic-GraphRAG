@@ -43,23 +43,51 @@ class GoogleCalendar:
             return None
 
     # List event
-    def list_event(self, timeMin: Optional[str] = None, maxResults: int = 10) -> List[dict]:
+    def list_event(self, timeMin: Optional[str] = None, timeMax: Optional[str] = None, json_input: Optional[dict] = None) -> List[dict]: 
         try:
-            # Call the Calendar API
+            # Nếu không có timeMin hoặc timeMax, lấy mặc định từ JSON input nếu có
+            if not timeMin or not timeMax:
+                if json_input:
+                    timeMin = json_input["parameters"].get("timeMin", None)  # Lấy timeMin từ JSON nếu có
+                    timeMax = json_input["parameters"].get("timeMax", None)  # Lấy timeMax từ JSON nếu có
+
+                if not timeMin or not timeMax:
+                    timeMin = datetime.now().isoformat()
+                    # Thiết lập timeMax là 2 tuần sau
+                    timeMax = (datetime.now() + timedelta(weeks=2)).isoformat()
+
+            # Call the Calendar API để lấy các sự kiện trong khoảng thời gian từ timeMin đến timeMax
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
-                timeMin=timeMin,
-                maxResults=maxResults,
+                timeMin=timeMin,  # Thời gian bắt đầu từ timeMin
+                timeMax=timeMax,  # Thời gian kết thúc đến timeMax
                 singleEvents=True,
-                orderBy='startTime',
+                orderBy='startTime',  # Sắp xếp theo thời gian bắt đầu
             ).execute()
 
             events = events_result.get('items', [])
+
+            if not events:
+                print(f"There is no schedule since {timeMin} to {timeMax}.")
+            else:
+                print(f"Events since {timeMin} to {timeMax}:")
+                for event in events:
+                    summary = event.get('summary', 'No summary')
+                    start = event['start'].get('dateTime', event['start'].get('date', 'There is no start time'))
+                    end = event['end'].get('dateTime', event['end'].get('date', 'There is no end time'))
+                    location = event.get('location', 'No mentioned location')
+                    print(f"Summary: {summary}")
+                    print(f"Start time: {start}")
+                    print(f"End time: {end}")
+                    print(f"Location: {location}")
+                    print("-" * 50)
+
             return events
+
         except HttpError as e:
             print(f"Error listing events: {e}")
             return []
-    
+
     # Get event
     def get_event(self, event_id: str) -> Optional[dict]:
         try:

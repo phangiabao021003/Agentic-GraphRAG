@@ -1,8 +1,8 @@
 from graph.graphdb_connection import GraphDBConnection
 import os
-from agents.agent_router import classify_user_input
+from agents.agent_router import classify_user_input, router_task
 import json
-from graph.entity_extractor import enhancing_prompt,full_retriever,llm_prompt
+from graph.entity_extractor import enhancing_prompt,full_retriever,llm_prompt,schedule_prompt
 from dotenv import load_dotenv
 from openai import OpenAI
 import time
@@ -11,7 +11,7 @@ from qdrant_client import QdrantClient
 from langchain.embeddings.ollama import OllamaEmbeddings
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+from calendar_tool.agent_calendar import GoogleCalendar
 load_dotenv()
 
 
@@ -19,6 +19,9 @@ client = OpenAI(
     base_url='http://localhost:11434/v1',
     api_key='dolphin-llama3'
 )
+
+calendar_agent= GoogleCalendar()
+
 # embeddings = OllamaEmbeddings(model="bge-m3")
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
@@ -67,7 +70,7 @@ def ask(query,new_query,his_agent,temperature):
     response = client.chat.completions.create(
         model='llama3.2',
         messages=[{"role": "user", "content": new_query}],
-        max_tokens=1024,
+        max_tokens=2048,
         stream=True,
         temperature=temperature,
     )
@@ -80,13 +83,11 @@ def ask(query,new_query,his_agent,temperature):
                 collected_message += content
                 time.sleep(0.01)  # Thêm độ trễ giữa các chunk để dễ đọc hơn
     his_agent.add_to_history("assistant", collected_message) # Sau khi kết thúc stream, thêm assistant reply vào lịch sử
-
-
+    return collected_message
 while True:
     # Nhập câu hỏi từ người dùng
     query = input("\n\nUser: ")
     if query.lower() == "exit":
-        conversation_history=[{"role": "system", "content": "You are a helpful virtual assistant."}]  # Reset lịch sử hội thoại
         break
     new_query = his_agent.generate_reply(query)
     #print(f"\nRelevant history: {relevant_history}")
@@ -96,29 +97,34 @@ while True:
     if route == "llm":
         print("llm detected.")
         new_prompt=llm_prompt(new_query, context=None)
-        print(f"""\n###New prompt:\n {new_prompt}""")
         ask(query,new_prompt,his_agent,0.5)  
     elif route == "rag":
         print("RAG detected.")
         context=full_retriever(graph,qdrant,query)
-        # print(f"""\n###Context:\n {context}""")
         new_prompt=enhancing_prompt(new_query, context)
-        print(f"""\n###New prompt:\n {new_prompt}""")
         ask(query,new_prompt,his_agent,0.1)  
     else:
-        print("Invalid route. Please check the classification.")
-    
-    #Classify the query
-    
-# query="What is AI?"
-# route= classify_user_input(query)  
-# if route == "chitchat":
-#     ask(query,conversation_history,0.5)  # Gọi hàm xử lý câu hỏi chitchat
-# elif route == "rag":
-#     new_query=enhancing_prompt(query)
-#     ask(new_query,conversation_history,0.1)  # Thêm độ trễ giữa các chunk để dễ đọc hơn
-# else:
-#     print("Invalid route. Please check the classification.")
+        print("Schedule detected.")
+        print("\nFounded events in :\n")
+        calendar_agent.list_event(timeMin=None, timeMax=None, json_input=None)
+        task = router_task(client,query)
+        new_prompt=schedule_prompt(query)
+        events=ask(query,new_prompt,his_agent,0.1)
+        events = json.loads(events)
+        if task == "create":
+            print("\nTask detected:", task)
+            # calendar_agent.insert_event(events)
+        elif task == "update":
+            print("\nTask detected:", task)
+            # calendar_agent.update_event(events)
+        elif task == "delete":
+            print("\nTask detected:", task)
+            # calendar_agent.delete_event(events)y
+        elif task == "read":
+            print("\nTask detected:", task)
+
+        
+        
 
 
 

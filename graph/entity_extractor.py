@@ -5,19 +5,20 @@ from typing import List
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
+import datetime
 import json
 # Load mô hình spaCy và KeyBERT
 nlp = spacy.load("en_core_web_sm")
 kw_model = KeyBERT()
-tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-reranker-base")
-reranker = AutoModelForSequenceClassification.from_pretrained("BAAI/bge-reranker-base")
+tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-reranker-v2-m3")
+reranker = AutoModelForSequenceClassification.from_pretrained("BAAI/bge-reranker-v2-m3")
 reranker.eval()
 
 class Entities(BaseModel):
     """Danh sách tên thực thể + khái niệm + chủ đề."""
     names: List[str] = Field(..., description="All entities, concepts, and keywords extracted from the text.")
 
-def extract_entities(text: str) -> Entities:
+def extract_entities(text: str) -> Entities: 
     doc = nlp(text)
 
     # Lấy thực thể NER
@@ -135,3 +136,106 @@ CONTEXT:
 ANSWER:
 """
     return base_prompt
+import datetime
+import pytz
+
+def schedule_prompt(user_query):
+    """
+    Generate an English prompt for Google Calendar Agent with:
+    - Natural language understanding
+    - CRUD operation classification
+    - Standard Google Calendar API JSON output
+    - Real-time timezone handling (Asia/Ho_Chi_Minh)
+    - Recurring event support (ONLY IF ANY OR MENTIONED IN QUERY)
+    """
+    
+    current_time = datetime.datetime.now(pytz.timezone('Asia/Ho_Chi_Minh')).strftime('%Y-%m-%d %H:%M:%S')
+    
+    prompt = f"""You are a professional Google Calendar Agent. Process the following request through these steps:
+
+1. REQUEST ANALYSIS:
+- User query: "{user_query}"
+- Current time (Vietnam): {current_time}
+- Detect operation type (CREATE/READ/UPDATE/DELETE)
+- Identify elements:
+  • Event name
+  • Time (auto-calculate if vague)
+  • Location
+  • Attendees
+  • Description
+  • Recurrence (ONLY IF ANY OR MENTIONED IN QUERY)
+
+2. CONVERSION RULES:
+- Default timezone: Asia/Ho_Chi_Minh (+07:00)
+- Time format: ISO 8601 (YYYY-MM-DDTHH:MM:SS+07:00)
+- Default duration: 1 hour (if unspecified)
+- Supports both English and Vietnamese
+
+3. EXAMPLE OUTPUT STRUCTURE (ALWAYS USE JSON):
+{{
+  "operation": "CREATE|READ|UPDATE|DELETE",
+  "parameters": {{
+    // CREATE/UPDATE
+    "summary": string,
+    "description": string,
+    "start": {{"dateTime": string, "timeZone": string}},
+    "end": {{"dateTime": string, "timeZone": string}},
+    "location": string,
+    "attendees": [{{"email": string, "displayName": string}}],
+    "colorId": integer (1-11),
+    "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY..."],
+
+    // READ
+    "timeMin": string, // For query filtering
+    "timeMax": string,
+    "q": string, // Search keywords
+
+    // UPDATE/DELETE
+    "eventId": string // Required
+  }},
+  "metadata": {{
+    "createdAt": "{current_time}",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "defaultReminders": [{{"method": "popup", "minutes": 10}}]
+  }}
+}}
+
+4. EXAMPLES:
+{json.dumps({
+    "CREATE": {
+        "example_input": "Schedule meeting with Marketing team tomorrow 9am in Room 301",
+        "output": {
+            "operation": "CREATE",
+            "parameters": {
+                "summary": "Marketing Team Meeting",
+                "location": "Room 301",
+                "start": {"dateTime": "2023-10-17T09:00:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"},
+                "end": {"dateTime": "2023-10-17T10:00:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"},
+                "colorId": 2
+            },
+            "metadata": {"createdAt": current_time}
+        }
+    },
+    "UPDATE": {
+        "example_input": "Reschedule gym session to 6:30PM starting Oct 20th",
+        "output": {
+            "operation": "UPDATE",
+            "parameters": {
+                "eventId": "abc123xyz",
+                "start": {"dateTime": "2023-10-20T18:30:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"},
+                "end": {"dateTime": "2023-10-20T19:30:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"}
+            }
+        }
+    }
+}, indent=2, ensure_ascii=False)}
+
+5. CRITICAL REQUIREMENTS:
+- Return ONLY valid JSON
+- NO additional explanations
+- Auto-calculate time for "tomorrow", "next week", etc.
+- Validate time correctness
+
+Process this request: "{user_query}"
+"""
+
+    return prompt
