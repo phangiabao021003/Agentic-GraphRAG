@@ -1,13 +1,13 @@
 import requests
-def classify_user_input(input: str) -> str:
+def router_query(input: str) -> str:
     prompt = f"""
     Classify the topic of the input into one of the following categories:
-    - 'llm' if it's a casual conversation, the questions aren't related to nutrition, RAG system of chatbot\n
-    - 'rag' if it's a question about nutrition or when the user mentions to use RAG system\n
-    - 'schedule' if it's about creating a health schedule
+    - 'llm' if the input is a casual conversation, like 'How are you?' or 'Tell me a joke.'
+    - 'rag' if the user asks information nutrition, health, diet, or any question where the user mentions nutrition or RAG system.
+    - 'calendar' if the input mentions to Create/Update/Read/Delete scheduling (IMPORTANT: Any query that refers to the schedule)
 
     The input: "{input}"
-    The classification should be one of the following: llm / rag / schedule
+    The classification should be one of the following: llm / rag / calendar
     Do not provide any other response.
     """
     response = requests.post(
@@ -21,19 +21,32 @@ def classify_user_input(input: str) -> str:
     )
     result = response.json()
     return result["choices"][0]["message"]["content"].strip().lower()
-def router_task(client,message):
-    prompt= f"""Based on the user query: {message}
-    Your task is determing the require of user in the query into 4 below choices:
-    - create: if the user want to create a new schedule, or add a schedule.
-    - update: if the user want to update a schedule, or change a schedule.
-    - delete: if the user want to delete a schedule, or cancel a schedule.
-    - read: if the user want to read, check a schedule, or ask about a schedule.
-    ONLY return the choice without any other texts, explainations."""
-    response = client.chat.completions.create(
-        model='llama3.1',
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=5,
-        temperature=0.1
+
+def router_output(output: str) -> str:
+    prompt = f"""
+    Based on the input, determine the input and classify it into one of the following categories:
+    - 'schedule' if the input is about schedule.
+    - 'normal' if the input is otherwise.
+    The input: "{output}"
+    The classification should be one of the following: schedule / normal 
+    DO NOT provide any other response.
+    """
+    
+    # Send POST request to the local server
+    response = requests.post(
+        "http://localhost:11434/v1/chat/completions",
+        headers={"Content-Type": "application/json"},
+        json={
+            "model": "llama3.1",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+        }
     )
-    result = response.choices[0].message.content.strip().lower()
-    return result
+    # Check if request was successful
+    response.raise_for_status()  # Raises HTTPError for bad responses (4xx and 5xx)
+    
+    # Process the response
+    result = response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip().upper()
+    
+    # Return True if the classification is "schedule", False otherwise
+    return "SCHEDULE" in result

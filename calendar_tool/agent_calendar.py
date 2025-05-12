@@ -32,11 +32,40 @@ class GoogleCalendar:
     def __exit__(self):
         if self.service:
             self.service.close()
+    def extract_event_data(self,json):        
+        parameters = json.get('parameters', {})
 
+        # Tạo một event với các trường có sẵn trong 'parameters', nếu không có thì gán giá trị rỗng
+        extracted_events = {
+            'summary': parameters.get('summary', ''),
+            'location': parameters.get('location', ''),
+            'description': parameters.get('description', ''),
+            'start': {
+                'dateTime': parameters.get('start', {}).get('dateTime', ''),
+                'timeZone': parameters.get('start', {}).get('timeZone', ''),
+            },
+            'end': {
+                'dateTime': parameters.get('end', {}).get('dateTime', ''),
+                'timeZone': parameters.get('end', {}).get('timeZone', ''),
+            },
+            'recurrence': parameters.get('recurrence', []),
+            'attendees': parameters.get('attendees', []),  # Trường này có thể không có trong JSON gốc
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': reminder['method'], 'minutes': reminder['minutes']}
+                    for reminder in json.get('metadata', {}).get('defaultReminders', [])
+                ],
+            },
+        }
+
+        return extracted_events
     # Insert event
-    def insert_event(self, event: dict) -> Optional[dict]:
+    def insert_event(self, json):
+        event = self.extract_event_data(json)
         try:
             event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
+            print(f"Event created: {event.get('htmlLink')}")
             return event
         except HttpError as e:
             print(f"Error inserting event: {e}")
@@ -53,10 +82,8 @@ class GoogleCalendar:
 
                 if not timeMin or not timeMax:
                     timeMin = datetime.now().isoformat()
-                    # Thiết lập timeMax là 2 tuần sau
                     timeMax = (datetime.now() + timedelta(weeks=2)).isoformat()
 
-            # Call the Calendar API để lấy các sự kiện trong khoảng thời gian từ timeMin đến timeMax
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
                 timeMin=timeMin,  # Thời gian bắt đầu từ timeMin

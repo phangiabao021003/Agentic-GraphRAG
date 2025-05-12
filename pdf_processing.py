@@ -7,13 +7,12 @@ from tqdm.auto import tqdm
 from pathlib import Path
 import pandas as pd
 from spacy.lang.en import English
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings.ollama import OllamaEmbeddings
-from langchain_qdrant import QdrantVectorStore, RetrievalMode
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams
+from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
+from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
 from uuid import uuid4
 from qdrant_client.http.models import Filter
+from qdrant_client import QdrantClient, models
+
 
 def text_formatter(text: str) -> str:
     """Performs minor formatting on text."""
@@ -100,27 +99,34 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # Tạo embedding model từ Hugging Face
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 client = QdrantClient(path="./vectordb")
+sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
 collections = client.get_collections().collections
 collection_names = [c.name for c in collections]
-if "Nutritionv4" not in collection_names:
-
+if "Nutritionv5" not in collection_names:
     client.create_collection(
-    collection_name="Nutritionv4",
-    vectors_config=VectorParams(size=768, distance=Distance.COSINE)
+    collection_name="Nutritionv5",
+    vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+    sparse_vectors_config={
+        "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
+    },
 )
+
     qdrant = QdrantVectorStore(
         client=client,
-        collection_name="Nutritionv4",
+        collection_name="Nutritionv5",
         embedding=embeddings,
-        retrieval_mode=RetrievalMode.DENSE
-    )
+        sparse_embedding=sparse_embeddings,
+        retrieval_mode=RetrievalMode.HYBRID,
+        vector_name="dense",
+        sparse_vector_name="sparse",)
+
     uuids = [str(uuid4()) for _ in range(len(documents))]
     qdrant.add_documents(documents=documents, ids=uuids)
 else:   
     empty_filter = Filter(must=[])
     count_result = client.count(
-        collection_name="Nutritionv4",
+        collection_name="Nutritionv5",
         count_filter=empty_filter,
     )
-    print(f"Số vector trong 'Nutritionv4': {count_result.count}")
+    print(f"Số vector trong 'Nutritionv5': {count_result.count}")
