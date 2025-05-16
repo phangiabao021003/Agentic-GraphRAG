@@ -2,7 +2,7 @@ from graph.graphdb_connection import GraphDBConnection
 import os
 from agents.agent_router import router_query,router_output
 import json
-from graph.entity_extractor import full_retriever
+from graph.context_extractor import full_retriever
 from prompt import enhancing_prompt, llm_prompt, schedule_prompt,process_calendar_query
 from dotenv import load_dotenv
 from openai import OpenAI

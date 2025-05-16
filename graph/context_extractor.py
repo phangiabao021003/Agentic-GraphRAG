@@ -72,24 +72,28 @@ def rerank(query, docs, model, tokenizer, top_k=4):
     reranked = sorted(scored_docs, key=lambda x: x[1], reverse=True)
     return [doc for doc, score in reranked[:top_k]]
 
-def full_retriever(graph,vector_store,question):
-    # graph_data = graph_retriever(question,graph)
+def full_retriever(graph, vector_store, question):
+    # graph_data = graph_retriever(question, graph)
     vector_data = vector_store.similarity_search(question, k=7)
     reranked_docs = rerank(question, vector_data, reranker, tokenizer, top_k=3)
+
     cleaned_contents = []
-    for doc in reranked_docs:
+    for idx, doc in enumerate(reranked_docs, start=1):
         content = doc.page_content.replace("\n", " ")
-        cleaned_contents.append(f"- {content}")
+        cleaned_contents.append(f"{idx}. {content}")
 
     joined_contents = "\n".join(cleaned_contents)
+    
     # final_data = f"""
     # ##
     # Graph data:
-    # {graph_data}`
+    # {graph_data}
     # ##    
     # Vector data:
     # {joined_contents}"""
+    
     return joined_contents
+
 
 
 
