@@ -4,15 +4,15 @@ from difflib import SequenceMatcher
 import time
 import json
 class ContextAwareAgent:
-    def __init__(self, client, max_context_tokens=4000):
+    def __init__(self, client, chat_history: list, max_context_tokens=4000):
         self.client = client
-        self.chat_history = []
+        self.chat_history = chat_history
         self.max_context_tokens = max_context_tokens
 
     def add_to_history(self, role, content):
         self.chat_history.append({"role": role, "content": content})
     def delete_history(self):
-        self.chat_history = []
+        self.chat_history = self.chat_history.clear()
     def should_use_history(self, message: str) -> bool:
         prompt = f""" The user has just asked the following question: "{message}". 
 Given this USER QUESTION, which might reference context in the chat history (e.g., through coreference like "them", "it", or "previously mentioned"),

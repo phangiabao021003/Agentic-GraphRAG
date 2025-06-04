@@ -1,7 +1,7 @@
 from typing import Optional
 from graph.graphdb_connection import GraphDBConnection
 import os
-from agents.agent_router import router_query,router_output
+from agents.agent_router import router_query
 import json
 from graph.context_extractor import full_retriever
 from prompt import enhancing_prompt, llm_prompt, schedule_prompt,process_json_ouput
@@ -15,7 +15,7 @@ from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from calendar_tool.agent_calendar import GoogleCalendar
 from google import genai
-
+from pdf_processing import process_pdf_to_documents, create_vectordb
 
 load_dotenv()
 
@@ -25,24 +25,15 @@ client = OpenAI(
     api_key='dolphin-llama3'
 )
 
-calendar_agent= GoogleCalendar()
 
 # embeddings = OllamaEmbeddings(model="bge-m3")
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+calendar_agent= GoogleCalendar()
 
-
-
-his_agent=ContextAwareAgent(client)
-
+history_chat=[]
+his_agent=ContextAwareAgent(client=client,history_chat=history_chat,max_context_tokens=4000)
 vectordb = QdrantClient(path="./vectordb")
-# Tạo vector store từ client và collection đã tồn tại
-# vector_store = QdrantVectorStore(
-#     client=vectordb,
-#     collection_name="Nutrition",
-#     embedding=embeddings,
-#     retrieval_mode=RetrievalMode.DENSE,
-# )
 qdrant = QdrantVectorStore(
         client=vectordb,
         collection_name="Nutritionv5",

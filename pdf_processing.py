@@ -12,121 +12,118 @@ from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
 from uuid import uuid4
 from qdrant_client.http.models import Filter
 from qdrant_client import QdrantClient, models
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
-def text_formatter(text: str) -> str:
-    """Performs minor formatting on text."""
-    cleaned_text = text.replace("\n", " ").strip()
-    return cleaned_text
+def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, min_token_length: int = 30):
+    def text_formatter(text: str) -> str:
+        """Performs minor formatting on text."""
+        return text.replace("\n", " ").strip()
 
-def open_and_read_pdf(pdf_path: str) -> list[dict]:
-    """
-    Opens a PDF file, reads its text content page by page, and collects statistics.
-    """
+    def split_list(input_list: list, slice_size: int) -> list[list[str]]:
+        return [input_list[i:i + slice_size] for i in range(0, len(input_list), slice_size)]
+
+    # Đọc nội dung PDF từng trang
     doc = fitz.open(pdf_path)
     pages_and_texts = []
-    for page_number, page in tqdm(enumerate(doc)):
+    for page_number, page in tqdm(enumerate(doc), desc="Reading PDF"):
         text = page.get_text()
         text = text_formatter(text)
         pages_and_texts.append({
-            "page_number": page_number - 41,
+            "page_number": page_number - 41,  # Offset page number (tuỳ mục đích)
             "page_char_count": len(text),
             "page_word_count": len(text.split(" ")),
             "page_sentence_count_raw": len(text.split(". ")),
             "page_token_count": len(text) / 4,
             "text": text
         })
-    return pages_and_texts
 
-project_root = Path(__file__).resolve().parent  # chính là thư mục "Đồ án"
-pdf_path = project_root / "human-nutrition-text.pdf"
-pages_and_texts = open_and_read_pdf(pdf_path=pdf_path)
+    # Tách câu bằng spaCy
+    nlp = English()
+    nlp.add_pipe("sentencizer")
+    for item in tqdm(pages_and_texts, desc="Splitting Sentences"):
+        item["sentences"] = [str(sent) for sent in nlp(item["text"]).sents]
+        item["page_sentence_count_spacy"] = len(item["sentences"])
 
-nlp = English()
-nlp.add_pipe("sentencizer")
+    # Chia nhỏ đoạn văn thành các cụm câu
+    for item in tqdm(pages_and_texts, desc="Chunking Sentences"):
+        item["sentence_chunks"] = split_list(item["sentences"], num_sentence_chunk_size)
+        item["num_chunks"] = len(item["sentence_chunks"])
 
-for item in tqdm(pages_and_texts):
-    item["sentences"] = list(nlp(item["text"]).sents)
-    item["sentences"] = [str(sentence) for sentence in item["sentences"]]
-    item["page_sentence_count_spacy"] = len(item["sentences"])
+    # Tạo các chunk từ cụm câu
+    pages_and_chunks = []
+    for item in tqdm(pages_and_texts, desc="Formatting Chunks"):
+        for sentence_chunk in item["sentence_chunks"]:
+            joined_chunk = "".join(sentence_chunk).replace("  ", " ").strip()
+            joined_chunk = re.sub(r'\.([A-Z])', r'. \1', joined_chunk)
+            pages_and_chunks.append({
+                "page_number": item["page_number"],
+                "sentence_chunk": joined_chunk,
+                "chunk_char_count": len(joined_chunk),
+                "chunk_word_count": len(joined_chunk.split(" ")),
+                "chunk_token_count": len(joined_chunk) / 4
+            })
 
-df = pd.DataFrame(pages_and_texts)
+    # Lọc chunk có độ dài tối thiểu
+    df_chunks = pd.DataFrame(pages_and_chunks)
+    filtered_chunks = df_chunks[df_chunks["chunk_token_count"] > min_token_length].to_dict(orient="records")
 
-num_sentence_chunk_size = 10
+    # Tạo danh sách Document
+    documents = []
+    for chunk in filtered_chunks:
+        documents.append(Document(
+            page_content=chunk["sentence_chunk"],
+            metadata={
+                "page_number": chunk["page_number"],
+                "char_count": chunk["chunk_char_count"],
+                "word_count": chunk["chunk_word_count"],
+                "token_count": chunk["chunk_token_count"]
+            }
+        ))
 
-def split_list(input_list: list, slice_size: int) -> list[list[str]]:
-    return [input_list[i:i + slice_size] for i in range(0, len(input_list), slice_size)]
+    return documents
 
-for item in tqdm(pages_and_texts):
-    item["sentence_chunks"] = split_list(input_list=item["sentences"], slice_size=num_sentence_chunk_size)
-    item["num_chunks"] = len(item["sentence_chunks"])
-
-df = pd.DataFrame(pages_and_texts)
-
-pages_and_chunks = []
-for item in tqdm(pages_and_texts):
-    for sentence_chunk in item["sentence_chunks"]:
-        chunk_dict = {}
-        chunk_dict["page_number"] = item["page_number"]
-        joined_sentence_chunk = "".join(sentence_chunk).replace("  ", " ").strip()
-        joined_sentence_chunk = re.sub(r'\.([A-Z])', r'. \1', joined_sentence_chunk)
-        chunk_dict["sentence_chunk"] = joined_sentence_chunk
-        chunk_dict["chunk_char_count"] = len(joined_sentence_chunk)
-        chunk_dict["chunk_word_count"] = len(joined_sentence_chunk.split(" "))
-        chunk_dict["chunk_token_count"] = len(joined_sentence_chunk) / 4
-        pages_and_chunks.append(chunk_dict)
-
-len(pages_and_chunks)
-
-df = pd.DataFrame(pages_and_chunks)
-
-min_token_length = 30
-pages_and_chunks_over_min_token_len = df[df["chunk_token_count"] > min_token_length].to_dict(orient="records")
-documents = []
-for chunk in pages_and_chunks_over_min_token_len:
-    doc = Document(
-        page_content=chunk["sentence_chunk"],
-        metadata={
-            "page_number": chunk["page_number"],
-            "char_count": chunk["chunk_char_count"],
-            "word_count": chunk["chunk_word_count"],
-            "token_count": chunk["chunk_token_count"]
-        }
+def create_vectordb(client:QdrantClient,
+                    collection_name: str,
+                    documents: list,
+                    embeddings: HuggingFaceEmbeddings,
+                    sparse_embeddings: FastEmbedSparse):
+    collections = client.get_collections().collections
+    collection_names = [c.name for c in collections]
+    if collection_name not in collection_names:
+        client.create_collection(
+        collection_name=collection_name,
+        vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+        sparse_vectors_config={
+            "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
+        },
     )
-    documents.append(doc)
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# Tạo embedding model từ Hugging Face
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-client = QdrantClient(path="./vectordb")
-sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+        qdrant = QdrantVectorStore(
+            client=client,
+            collection_name=collection_name,
+            embedding=embeddings,
+            sparse_embedding=sparse_embeddings,
+            retrieval_mode=RetrievalMode.HYBRID,
+            vector_name="dense",
+            sparse_vector_name="sparse",)
 
-collections = client.get_collections().collections
-collection_names = [c.name for c in collections]
-if "Nutritionv5" not in collection_names:
-    client.create_collection(
-    collection_name="Nutritionv5",
-    vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
-    sparse_vectors_config={
-        "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
-    },
-)
+        uuids = [str(uuid4()) for _ in range(len(documents))]
+        qdrant.add_documents(documents=documents, ids=uuids)
+    else:   
+        empty_filter = Filter(must=[])
+        count_result = client.count(
+            collection_name=collection_name,
+            count_filter=empty_filter,
+        )
+        print(f"Số vector trong {collection_name}: {count_result.count}")
 
-    qdrant = QdrantVectorStore(
-        client=client,
-        collection_name="Nutritionv5",
-        embedding=embeddings,
-        sparse_embedding=sparse_embeddings,
-        retrieval_mode=RetrievalMode.HYBRID,
-        vector_name="dense",
-        sparse_vector_name="sparse",)
-
-    uuids = [str(uuid4()) for _ in range(len(documents))]
-    qdrant.add_documents(documents=documents, ids=uuids)
-else:   
-    empty_filter = Filter(must=[])
-    count_result = client.count(
-        collection_name="Nutritionv5",
-        count_filter=empty_filter,
-    )
-    print(f"Số vector trong 'Nutritionv5': {count_result.count}")
+# project_root = Path(__file__).resolve().parent
+# pdf_path = project_root / "human-nutrition-text.pdf"
+# documents = process_pdf_to_documents(str(pdf_path))
+# collection_name = pdf_path.name
+# # Tạo embedding model từ Hugging Face
+# embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+# client = QdrantClient(path="./vectordb")
+# sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+# create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)
