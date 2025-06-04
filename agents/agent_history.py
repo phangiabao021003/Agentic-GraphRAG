@@ -26,7 +26,6 @@ ONLY return "YES" or "NO".
             temperature=0.1
         )
         result = response.choices[0].message.content
-        print(f"Response: {result}")
         return "YES" in result.strip().upper()
 
     def sliding_window_chunks(self, window_size=2) -> List[str]:
@@ -103,7 +102,6 @@ ONLY return "YES" or "NO".
         
         use_history = self.should_use_history(user_message)
         if not use_history or len(self.chat_history) < 2:
-            print("Not using user message for query rewriting.")
             new_query = user_message
         else:
             print("Using history for query rewriting.")

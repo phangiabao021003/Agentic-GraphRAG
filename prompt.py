@@ -146,22 +146,100 @@ def schedule_prompt(user_query):
 - NO additional explanations
 - Auto-calculate time for "tomorrow", "next week", etc.
 - Validate time correctness
+- JSON MUST be ISO 8601 compliant
 
 Process this request: "{user_query}"
 """
 
     return prompt
 
-def process_calendar_query(query):
+def process_json_ouput(json_input):
     prompt=f"""
-You are an intelligent assistant specializing in schedule management. Analyze USER QUERY and classify them into the following types:
-- TYPE 1: User requests the assistant to create a schedule based on a general description.
-- TYPE 2: User provides specific details to create, update, edit, or delete a schedule, including time and activities.
-Instructions:
-- For TYPE 1, OUTPUT_1: generate a schedule based on the user's description.
-- For TYPE 2, OUTPUT_2: return the specific schedule details provided by the user.
-###
-USER QUERY: "{query}"
-IMPORTANT: ONLY return the output — do not include the request type in the response.
-"""
+You are a virtual assistant whose job is to convert Google Calendar data from JSON format into understandable schedule descriptions.{json_input}
+The input json format structured as the example below: 
+###The input JSON format is as follows:
+
+[{{
+    "operation": "CREATE|READ|UPDATE|DELETE",
+    "parameters": {{
+      // CREATE/UPDATE
+      "summary": string,
+      "description": string,
+      "start": {{"dateTime": string, "timeZone": string}},
+      "end": {{"dateTime": string, "timeZone": string}},
+      "location": string,
+      "attendees": [{{"email": string, "displayName": string}}],
+      "colorId": integer (1-11),
+      "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY..."],
+
+      // READ (query)
+      "timeMin": string,
+      "timeMax": string,
+      "q": string,
+
+      // UPDATE/DELETE
+      "eventId": string
+    }},
+    "metadata": {{
+      "createdAt": string,
+      "timezone": "Asia/Ho_Chi_Minh",
+      "defaultReminders": [{{"method": "popup", "minutes": 10}}]
+    }}
+  }}
+]
+
+---
+
+###Example input JSON:
+
+[   "operation": "CREATE",
+    "parameters": {{
+      "summary": "Development Team Meeting",
+      "description": "Discuss next sprint plan",
+      "start": {{"dateTime": "2025-06-10T09:00:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"}},
+      "end": {{"dateTime": "2025-06-10T10:30:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"}},
+      "location": "Main Conference Room",
+      "attendees": [
+        {{"email": "nguyen.van.a@example.com", "displayName": "Nguyen Van A"}},
+        {{"email": "le.thi.b@example.com", "displayName": "Le Thi B"}}
+      ],
+      "colorId": 5,
+      "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=TU"]
+    }},
+    "metadata": {{
+      "createdAt": "2025-05-25T15:00:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "defaultReminders": [{{"method": "popup", "minutes": 10}}]
+    }},
+  {{
+    "operation": "CREATE",
+    "parameters": {{
+      "summary": "Meeting with Client XYZ",
+      "description": "",
+      "start": {{"dateTime": "2025-06-12T14:00:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"}},
+      "end": {{"dateTime": "2025-06-12T15:00:00+07:00", "timeZone": "Asia/Ho_Chi_Minh"}},
+      "location": "ABC Hotel",
+      "attendees": [],
+      "colorId": 3
+    }},
+    "metadata": {{
+      "createdAt": "2025-05-26T10:00:00+07:00",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "defaultReminders": [{{"method": "popup", "minutes": 15}}]
+    }}
+  }}
+]
+
+---
+
+###Example output from json (If a field has no data (for example, location is missing), you can omit that part of the description):
+
+- On June 10, 2025, from 09:00 to 10:30: Development Team Meeting at Main Conference Room. Attendees: Nguyen Van A, Le Thi B. Description: Discuss next sprint plan. This event recurs weekly on Tuesdays.
+
+- On June 12, 2025, from 14:00 to 15:00: Meeting with Client XYZ at ABC Hotel.
+
+---
+Now, here is the input JSON, let's return the corresponding schedule description (ONLY return schedule description without any explainations): 
+###JSON: "{json_input}" 
+###Schedule description:"""
     return prompt

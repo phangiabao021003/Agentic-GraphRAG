@@ -2,7 +2,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
-
+import dateutil.parser
 from calendar_tool.auth import get_calendar_credentials
 
 
@@ -93,9 +93,15 @@ class GoogleCalendar:
             ).execute()
 
             events = events_result.get('items', [])
+            dt_min = dateutil.parser.isoparse(timeMin)
+            dt_max = dateutil.parser.isoparse(timeMax)
+
+            # Format lại chuỗi thời gian theo định dạng dd/mm/yyyy HH:MM
+            time_min_str = dt_min.strftime("%d/%m/%Y %H:%M")
+            time_max_str = dt_max.strftime("%d/%m/%Y %H:%M")
 
             if not events:
-                print(f"There is no schedule since {timeMin} to {timeMax}.")
+                print(f"There is no schedule since {time_min_str} to {time_max_str}.")
             else:
                 print(f"Events since {timeMin} to {timeMax}:")
                 for event in events:

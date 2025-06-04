@@ -1,9 +1,10 @@
+from typing import Optional
 from graph.graphdb_connection import GraphDBConnection
 import os
 from agents.agent_router import router_query,router_output
 import json
 from graph.context_extractor import full_retriever
-from prompt import enhancing_prompt, llm_prompt, schedule_prompt,process_calendar_query
+from prompt import enhancing_prompt, llm_prompt, schedule_prompt,process_json_ouput
 from dotenv import load_dotenv
 from openai import OpenAI
 import time
@@ -69,7 +70,7 @@ driver.close()
 
 # Example usage of the entity extractor
 
-def ask(query,temperature):
+def stream(query: str, temperature: Optional[float] = 0.5):
     response = client.chat.completions.create(
         model='llama3.2',
         messages=[{"role": "user", "content": query}],
@@ -86,6 +87,15 @@ def ask(query,temperature):
                 collected_message += content
                 time.sleep(0.01)  # Thêm độ trễ giữa các chunk để dễ đọc hơn
     return collected_message
+def ask(query: str, temperature: Optional[float] = 0.5):
+    response = client.chat.completions.create(
+        model='llama3.2',
+        messages=[{"role": "user", "content": query}],
+        max_tokens=2048,
+        temperature=temperature,
+    )
+    answer = response.choices[0].message.content
+    return answer
 while True:
     # Nhập câu hỏi từ người dùng
     query = input("\n\nUser: ")
@@ -100,19 +110,17 @@ while True:
     if route == "llm":
         print("llm detected.")
         new_prompt=llm_prompt(new_query, context=None)
-        answer=ask(new_prompt,0.5) 
+        answer=stream(new_prompt,0.5) 
         his_agent.add_to_history("assistant", answer) # Sau khi kết thúc stream, thêm assistant reply vào lịch sử
  
     elif route == "rag":
         print("RAG detected.")
         context=full_retriever(graph,qdrant,query)
         new_prompt=enhancing_prompt(new_query, context)
-        answer=ask(new_prompt,0.1)  
+        answer=stream(new_prompt,0.1)  
     elif route == "calendar":
         print("Schedule detected.")
-        processed_query=process_calendar_query(query)
-        answer=ask(processed_query,0.1)
-        new_prompt=schedule_prompt(answer)
+        new_prompt=schedule_prompt(new_query)
         response = gemini.models.generate_content(
             model="gemini-2.0-flash", 
             contents=new_prompt,  
@@ -121,22 +129,44 @@ while True:
         events=response.text
         print("\nEvents:\n",events)
         events = json.loads(events)
+        json_explain_prompt= process_json_ouput(events)
+        answer= ask(json_explain_prompt,0.1)
         for event in events:
             if event['operation'] == 'CREATE':
                 print("\nTask detected:", event['operation'])
-                # calendar_agent.insert_event(event)    
+                print("\n Description schedule:\n", answer)
+                print("\nDo you want to schedule this event? (yes/no)")
+                confirmation = input().strip().lower()
+                if confirmation == "yes":
+                    # calendar_agent.insert_event(json_input= event)
+                    pass    
             elif event['operation'] == "UPDATE":
                 print("\nTask detected:", event['operation'])
-                # calendar_agent.update_event(events)
+                print("\n Description schedule:\n", answer)
+                print("\nDo you want to schedule this event? (yes/no)")
+                confirmation = input().strip().lower()
+                if confirmation == "yes":
+                    # calendar_agent.update_event(json_input=event)
+                    pass    
             elif event['operation'] == "DELETE":
                 print("\nTask detected:", event['operation'])
-                # calendar_agent.delete_event(events)y
+                print("\n Description schedule:\n", answer)
+                print("\nDo you want to schedule this event? (yes/no)")
+                confirmation = input().strip().lower()
+                if confirmation == "yes":
+                    # calendar_agent.delete_event(json_input=event)
+                    pass
             elif event['operation'] == "READ":
                 print("\nTask detected:", event['operation'])
-                calendar_agent.list_event(timeMin=None, timeMax=None, json_input=None)
+                calendar_agent.list_event( json_input=event)
+            else:
+                pass
+    else:
+        print("Event not scheduled.")
+        continue
 
-        
-        
+    
+    
 
 
 
