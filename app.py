@@ -1,3 +1,4 @@
+from pathlib import Path
 import streamlit as st
 from typing import Optional
 import os
@@ -36,10 +37,10 @@ his_agent=ContextAwareAgent(client=client,chat_history=chat_history,max_context_
 
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-vectordb = QdrantClient(path="./vectordb")
+vectordb =  QdrantClient(host="localhost", port=6333)
 qdrant = QdrantVectorStore(
     client=vectordb,
-    collection_name="Nutritionv5",
+    collection_name="human-nutrition-text.pdf",
     embedding=embeddings,
     sparse_embedding=sparse_embeddings,
     retrieval_mode=RetrievalMode.HYBRID,
@@ -83,12 +84,12 @@ def ask(query: str, temperature: Optional[float] = 0.5):
     )
     return response.choices[0].message.content
 
-def handle_llm(query, new_query):
+def handle_llm(new_query):
     new_prompt = llm_prompt(new_query, context=None)
     return stream(new_prompt, 0.5)
 
-def handle_rag(query, new_query):
-    context = full_retriever(graph, qdrant, query)
+def handle_rag( new_query,selected_doc_ids=None):
+    context = full_retriever(graph, qdrant, new_query,selected_doc_ids)
     new_prompt = enhancing_prompt(new_query, context)
     return stream(new_prompt, 0.1)
 
@@ -124,44 +125,118 @@ def embed_file(uploaded_file):
                     documents=documents, 
                     embeddings=embeddings,
                     sparse_embeddings=sparse_embeddings)
+    return 
+def get_all_doc_ids_from_collection(collection_name: str, limit: int = 100) -> list:
     
+    all_doc_ids = set()
+    scroll_offset = None
+
+    while True:
+        response = vectordb.scroll(
+            collection_name=collection_name,
+            scroll_filter=None,
+            limit=limit,
+            offset=scroll_offset,
+            with_payload=True,
+            with_vectors=False
+        )
+        points = response[0]
+        if not points:
+            break
+        for point in points:
+            payload = point.payload
+            doc_id = payload.get("doc_id")
+            if doc_id:
+                all_doc_ids.add(doc_id)
+        scroll_offset = response[1]
+        if scroll_offset is None:
+            break
+
+    return sorted(all_doc_ids)
+
 
 # === Giao diện Streamlit ===
-st.set_page_config(page_title="Agent RAG + Calendar", layout="wide")
+st.set_page_config(page_title="Nutrition Virtual Assistant", layout="wide")
 st.title("🧠 Agent Chatbot: RAG, LLM & Calendar")
 
+# Sidebar - Upload file PDF và hiển thị danh sách tài liệu
 with st.sidebar:
     st.header("📎 Upload documents")
     uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
     if uploaded_file:
         st.success(embed_file(uploaded_file))
 
-st.subheader("💬 Gửi câu hỏi")
-user_query = st.text_input("Nhập câu hỏi của bạn...")
-route_option = st.radio("Chọn phương thức xử lý", options=["Auto", "llm", "rag", "calendar"])
-
-if st.button("Gửi câu hỏi"):
-    if user_query:
-        new_query = his_agent.generate_reply(user_query)
-        his_agent.add_to_history("user", new_query)
-
-        if route_option == "Auto":
-            route = router_query(new_query)
+    st.markdown("### 📚 Documents list existed in vector database:")
+    try:
+        doc_ids = get_all_doc_ids_from_collection("human-nutrition-text.pdf")
+        if doc_ids:
+            selected_doc_ids = st.multiselect(
+                "Chọn tài liệu (`doc_id`) sử dụng trong quá trình RAG (có thể bỏ trống):",
+                options=doc_ids,
+                default=[]
+            )
+            st.session_state.selected_doc_ids = selected_doc_ids
         else:
-            route = route_option
+            st.info("There is no document in vector database.")
+            st.session_state.selected_doc_ids = []
+    except Exception as e:
+        st.error(f"Lỗi khi truy xuất tài liệu: {str(e)}")
+        st.session_state.selected_doc_ids = []
 
-        if route == "llm":
-            output = handle_llm(user_query, new_query)
-        elif route == "rag":
-            output = handle_rag(user_query, new_query)
-        elif route == "calendar":
-            output = handle_calendar(new_query)
-        else:
-            output = "Không xác định route phù hợp."
+    # Tùy chọn chọn route xử lý
+    st.markdown("### 🔀 Route xử lý")
+    route_option = st.radio("Chọn phương thức xử lý", options=["Auto", "llm", "rag", "calendar"])
 
-        his_agent.add_to_history("assistant", output)
-        st.markdown("### ✅ Phản hồi:")
-        st.write(output)
+    # Nút reset cuộc trò chuyện
+    if st.button("🧹 Xoá lịch sử chat"):
+        st.session_state.chat_history = []
+
+# === Giao diện Chat kiểu ChatGPT ===
+
+# Khởi tạo lịch sử chat nếu chưa có
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# Hiển thị các tin nhắn cũ
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# Hộp nhập tin nhắn từ người dùng
+user_query = st.chat_input("Nhập câu hỏi của bạn...")
+
+# Xử lý khi người dùng gửi câu hỏi
+if user_query:
+    with st.chat_message("user"):
+        st.markdown(user_query)
+
+    # Tạo câu hỏi mới dựa vào agent context-aware
+    new_query = his_agent.generate_reply(user_query)
+    his_agent.add_to_history("user", new_query)
+
+    # Route câu hỏi
+    if route_option == "Auto":
+        route = router_query(new_query)
     else:
-        st.warning("Vui lòng nhập câu hỏi.")
+        route = route_option
 
+    # Xử lý theo route
+    if route == "llm":
+        output = handle_llm( new_query)
+    elif route == "rag":
+        selected_docs=st.session_state.get("selected_docs_ids", [])
+        output = handle_rag( new_query,selected_docs)
+    elif route == "calendar":
+        output = handle_calendar(new_query)
+    else:
+        output = "Không xác định route phù hợp."
+
+    his_agent.add_to_history("assistant", output)
+
+    # Hiển thị phản hồi
+    with st.chat_message("assistant"):
+        st.markdown(output)
+
+    # Lưu vào session_state để hiển thị lại sau
+    st.session_state.chat_history.append({"role": "user", "content": user_query})
+    st.session_state.chat_history.append({"role": "assistant", "content": output})

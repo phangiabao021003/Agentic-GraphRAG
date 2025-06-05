@@ -1,3 +1,4 @@
+from qdrant_client.http.models import FieldCondition, MatchValue
 # Requires !pip install PyMuPDF tqdm spacy
 from langchain_qdrant import QdrantVectorStore, RetrievalMode
 import re
@@ -26,6 +27,7 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
     # Đọc nội dung PDF từng trang
     doc = fitz.open(pdf_path)
     pages_and_texts = []
+
     for page_number, page in tqdm(enumerate(doc), desc="Reading PDF"):
         text = page.get_text()
         text = text_formatter(text)
@@ -70,10 +72,12 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
 
     # Tạo danh sách Document
     documents = []
+    doc_id= Path(pdf_path).stem
     for chunk in filtered_chunks:
         documents.append(Document(
             page_content=chunk["sentence_chunk"],
             metadata={
+                "doc_id": doc_id,
                 "page_number": chunk["page_number"],
                 "char_count": chunk["chunk_char_count"],
                 "word_count": chunk["chunk_word_count"],
@@ -85,7 +89,7 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
 
 def create_vectordb(client:QdrantClient,
                     collection_name: str,
-                    documents: list,
+                    documents: list[Document],
                     embeddings: HuggingFaceEmbeddings,
                     sparse_embeddings: FastEmbedSparse):
     collections = client.get_collections().collections
@@ -98,32 +102,41 @@ def create_vectordb(client:QdrantClient,
             "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
         },
     )
+    doc_id = next(iter(set(doc.metadata["doc_id"] for doc in documents)))
 
-        qdrant = QdrantVectorStore(
-            client=client,
-            collection_name=collection_name,
-            embedding=embeddings,
-            sparse_embedding=sparse_embeddings,
-            retrieval_mode=RetrievalMode.HYBRID,
-            vector_name="dense",
-            sparse_vector_name="sparse",)
+    existing = client.scroll(
+        collection_name=collection_name,
+        scroll_filter=Filter(
+            must=[
+                FieldCondition(key="doc_id", match=MatchValue(value=doc_id))
+            ]
+        ),
+        limit=1
+    )
 
-        uuids = [str(uuid4()) for _ in range(len(documents))]
-        qdrant.add_documents(documents=documents, ids=uuids)
-    else:   
-        empty_filter = Filter(must=[])
-        count_result = client.count(
-            collection_name=collection_name,
-            count_filter=empty_filter,
-        )
-        print(f"Số vector trong {collection_name}: {count_result.count}")
+    if existing[0]:
+        print(f"❌ doc_id '{doc_id}' đã tồn tại trong collection '{collection_name}'. Không thêm lại.")
+        return
+    
+    qdrant = QdrantVectorStore(
+        client=client,
+        collection_name=collection_name,
+        embedding=embeddings,
+        sparse_embedding=sparse_embeddings,
+        retrieval_mode=RetrievalMode.HYBRID,
+        vector_name="dense",
+        sparse_vector_name="sparse",)
 
-# project_root = Path(__file__).resolve().parent
-# pdf_path = project_root / "human-nutrition-text.pdf"
-# documents = process_pdf_to_documents(str(pdf_path))
-# collection_name = pdf_path.name
-# # Tạo embedding model từ Hugging Face
-# embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-# client = QdrantClient(path="./vectordb")
-# sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-# create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)
+    uuids = [str(uuid4()) for _ in range(len(documents))]
+    qdrant.add_documents(documents=documents, ids=uuids)
+
+
+project_root = Path(__file__).resolve().parent
+pdf_path = project_root / "human-nutrition-text.pdf"
+documents = process_pdf_to_documents(str(pdf_path))
+collection_name = pdf_path.name
+# Tạo embedding model từ Hugging Face
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+client = QdrantClient(host="localhost", port=6333)
+sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)

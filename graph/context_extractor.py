@@ -1,4 +1,5 @@
 import spacy
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from keybert import KeyBERT
 from pydantic import BaseModel, Field
 from typing import List
@@ -72,9 +73,17 @@ def rerank(query, docs, model, tokenizer, top_k=4):
     reranked = sorted(scored_docs, key=lambda x: x[1], reverse=True)
     return [doc for doc, score in reranked[:top_k]]
 
-def full_retriever(graph, vector_store, question):
+def full_retriever(graph, vector_store, question,doc_id):
     # graph_data = graph_retriever(question, graph)
-    vector_data = vector_store.similarity_search(question, k=7)
+    doc_filter = Filter(
+    must=[
+        FieldCondition(
+            key="doc_id",
+            match=MatchValue(value=doc_id)
+        )
+    ]
+)
+    vector_data = vector_store.similarity_search(question, k=7, filter=doc_filter)
     reranked_docs = rerank(question, vector_data, reranker, tokenizer, top_k=3)
 
     cleaned_contents = []
