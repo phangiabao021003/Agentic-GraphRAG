@@ -10,7 +10,6 @@ from openai import OpenAI
 import time
 from agents.agent_history import ContextAwareAgent
 from qdrant_client import QdrantClient
-from langchain.embeddings.ollama import OllamaEmbeddings
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from calendar_tool.agent_calendar import GoogleCalendar
@@ -32,16 +31,17 @@ sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 calendar_agent= GoogleCalendar()
 
 history_chat=[]
-his_agent=ContextAwareAgent(client=client,history_chat=history_chat,max_context_tokens=4000)
-vectordb = QdrantClient(path="./vectordb")
+his_agent=ContextAwareAgent(client=client,max_context_tokens=4000)
+vectordb =  QdrantClient(host="localhost", port=6333)
 qdrant = QdrantVectorStore(
-        client=vectordb,
-        collection_name="Nutritionv5",
-        embedding=embeddings,
-        sparse_embedding=sparse_embeddings,
-        retrieval_mode=RetrievalMode.HYBRID,
-        vector_name="dense",
-        sparse_vector_name="sparse")
+    client=vectordb,
+    collection_name="human-nutrition-text.pdf",
+    embedding=embeddings,
+    sparse_embedding=sparse_embeddings,
+    retrieval_mode=RetrievalMode.HYBRID,
+    vector_name="dense",
+    sparse_vector_name="sparse"
+)
 
 password = os.environ.get("NEO4J_PASSWORD")
 driver = GraphDBConnection(

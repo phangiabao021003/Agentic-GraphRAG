@@ -65,8 +65,8 @@ class GoogleCalendar:
         event = self.extract_event_data(json)
         try:
             event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
-            print(f"Event created: {event.get('htmlLink')}")
-            return event
+            output= f"Event created: {event.get('htmlLink')}"
+            return output
         except HttpError as e:
             print(f"Error inserting event: {e}")
             return None
@@ -99,23 +99,23 @@ class GoogleCalendar:
             # Format lại chuỗi thời gian theo định dạng dd/mm/yyyy HH:MM
             time_min_str = dt_min.strftime("%d/%m/%Y %H:%M")
             time_max_str = dt_max.strftime("%d/%m/%Y %H:%M")
-
+            output = ""
             if not events:
-                print(f"There is no schedule since {time_min_str} to {time_max_str}.")
+                output += f"There is no schedule from {time_min_str} to {time_max_str}."
+                return output
             else:
-                print(f"Events since {timeMin} to {timeMax}:")
+                output += f"Events since {timeMin} to {timeMax}:"
                 for event in events:
                     summary = event.get('summary', 'No summary')
                     start = event['start'].get('dateTime', event['start'].get('date', 'There is no start time'))
                     end = event['end'].get('dateTime', event['end'].get('date', 'There is no end time'))
                     location = event.get('location', 'No mentioned location')
-                    print(f"Summary: {summary}")
-                    print(f"Start time: {start}")
-                    print(f"End time: {end}")
-                    print(f"Location: {location}")
-                    print("-" * 50)
-
-            return events
+                    output += f"Summary: {summary}\n"
+                    output += f"Start time: {start}\n"
+                    output += f"End time: {end}\n"
+                    output += f"Location: {location}\n"
+                    output += "-" * 50 + "\n"
+                return output
 
         except HttpError as e:
             print(f"Error listing events: {e}")

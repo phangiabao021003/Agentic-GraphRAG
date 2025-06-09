@@ -1,4 +1,3 @@
-from qdrant_client.http.models import FieldCondition, MatchValue
 # Requires !pip install PyMuPDF tqdm spacy
 from langchain_qdrant import QdrantVectorStore, RetrievalMode
 import re
@@ -88,55 +87,48 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
     return documents
 
 def create_vectordb(client:QdrantClient,
-                    collection_name: str,
+                    # collection_name: str,
                     documents: list[Document],
+                    existed_docs:set,
                     embeddings: HuggingFaceEmbeddings,
                     sparse_embeddings: FastEmbedSparse):
-    collections = client.get_collections().collections
-    collection_names = [c.name for c in collections]
-    if collection_name not in collection_names:
-        client.create_collection(
-        collection_name=collection_name,
-        vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
-        sparse_vectors_config={
-            "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
-        },
-    )
+    # collections = client.get_collections().collections
+    # collection_names = [c.name for c in collections]
+    # if collection_name not in collection_names:
+    #     client.create_collection(
+    #     collection_name=collection_name,
+    #     vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+    #     sparse_vectors_config={
+    #         "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
+    #     },
+    # )
     doc_id = next(iter(set(doc.metadata["doc_id"] for doc in documents)))
 
-    existing = client.scroll(
-        collection_name=collection_name,
-        scroll_filter=Filter(
-            must=[
-                FieldCondition(key="doc_id", match=MatchValue(value=doc_id))
-            ]
-        ),
-        limit=1
-    )
+    existing = doc_id in existed_docs
+    if existing:
+        output=f"❌ Documenet '{doc_id}' existed in vectordb."
+        return output
+    else:
+        qdrant = QdrantVectorStore(
+            client=client,
+            collection_name="human-nutrition-text.pdf",
+            embedding=embeddings,
+            sparse_embedding=sparse_embeddings,
+            retrieval_mode=RetrievalMode.HYBRID,
+            vector_name="dense",
+            sparse_vector_name="sparse",)
 
-    if existing[0]:
-        print(f"❌ doc_id '{doc_id}' đã tồn tại trong collection '{collection_name}'. Không thêm lại.")
-        return
+        uuids = [str(uuid4()) for _ in range(len(documents))]
+        qdrant.add_documents(documents=documents, ids=uuids)
     
-    qdrant = QdrantVectorStore(
-        client=client,
-        collection_name=collection_name,
-        embedding=embeddings,
-        sparse_embedding=sparse_embeddings,
-        retrieval_mode=RetrievalMode.HYBRID,
-        vector_name="dense",
-        sparse_vector_name="sparse",)
-
-    uuids = [str(uuid4()) for _ in range(len(documents))]
-    qdrant.add_documents(documents=documents, ids=uuids)
 
 
-project_root = Path(__file__).resolve().parent
-pdf_path = project_root / "human-nutrition-text.pdf"
-documents = process_pdf_to_documents(str(pdf_path))
-collection_name = pdf_path.name
-# Tạo embedding model từ Hugging Face
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-client = QdrantClient(host="localhost", port=6333)
-sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)
+# project_root = Path(__file__).resolve().parent
+# pdf_path = project_root / "human-nutrition-text.pdf"
+# documents = process_pdf_to_documents(str(pdf_path))
+# collection_name = pdf_path.name
+# # Tạo embedding model từ Hugging Face
+# embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+# client = QdrantClient(host="localhost", port=6333)
+# sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+# create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)

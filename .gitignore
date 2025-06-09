@@ -25,3 +25,5 @@ __pycache__/
 credentials.json
 
 *.pickle
+
+qdrant_storage

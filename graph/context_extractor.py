@@ -4,10 +4,10 @@ from keybert import KeyBERT
 from pydantic import BaseModel, Field
 from typing import List
 import torch
+torch.classes.__path__ = []
+from langchain_qdrant import  QdrantVectorStore
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
-import datetime
-import json
+
 # Load mô hình spaCy và KeyBERT
 nlp = spacy.load("en_core_web_sm")
 kw_model = KeyBERT()
@@ -73,17 +73,16 @@ def rerank(query, docs, model, tokenizer, top_k=4):
     reranked = sorted(scored_docs, key=lambda x: x[1], reverse=True)
     return [doc for doc, score in reranked[:top_k]]
 
-def full_retriever(graph, vector_store, question,doc_id):
+def full_retriever(graph, vector_store: QdrantVectorStore, question: str,doc_ids: list):
     # graph_data = graph_retriever(question, graph)
-    doc_filter = Filter(
-    must=[
-        FieldCondition(
-            key="doc_id",
-            match=MatchValue(value=doc_id)
-        )
+    filters = [
+        FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))
+        for doc_id in doc_ids
     ]
-)
-    vector_data = vector_store.similarity_search(question, k=7, filter=doc_filter)
+
+    # Tạo filter `must` kết hợp tất cả các điều kiện
+    final_filter = Filter(must=filters)
+    vector_data = vector_store.similarity_search(question, k=7, filter=final_filter)
     reranked_docs = rerank(question, vector_data, reranker, tokenizer, top_k=3)
 
     cleaned_contents = []
