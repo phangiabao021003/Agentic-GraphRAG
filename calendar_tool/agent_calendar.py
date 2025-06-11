@@ -61,15 +61,23 @@ class GoogleCalendar:
 
         return extracted_events
     # Insert event
-    def insert_event(self, json):
-        event = self.extract_event_data(json)
-        try:
-            event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
-            output= f"Event created: {event.get('htmlLink')}"
-            return output
-        except HttpError as e:
-            print(f"Error inserting event: {e}")
-            return None
+    def insert_event(self, json_input):
+
+        start_time = event[0]['parameters']['start']['dateTime']
+        end_time = event[0]['parameters']['end']['dateTime']
+        note,existed_event = self.list_event(timeMin=start_time, timeMax=end_time)
+        if existed_event == True:
+            noti= "There is already an event in this time slot."
+            return noti
+        else:
+            try:
+                event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
+                noti= f"Event created: {event.get('htmlLink')}"
+                return noti
+            except HttpError as e:
+                print(f"Error inserting event: {e}")
+                return None
+
 
     # List event
     def list_event(self, timeMin: Optional[str] = None, timeMax: Optional[str] = None, json_input: Optional[dict] = None) -> List[dict]: 
@@ -102,7 +110,7 @@ class GoogleCalendar:
             output = ""
             if not events:
                 output += f"There is no schedule from {time_min_str} to {time_max_str}."
-                return output
+                return output, False
             else:
                 output += f"Events since {timeMin} to {timeMax}:"
                 for event in events:
@@ -115,7 +123,7 @@ class GoogleCalendar:
                     output += f"End time: {end}\n"
                     output += f"Location: {location}\n"
                     output += "-" * 50 + "\n"
-                return output
+                return output, True
 
         except HttpError as e:
             print(f"Error listing events: {e}")

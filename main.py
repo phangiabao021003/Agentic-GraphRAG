@@ -4,7 +4,7 @@ import os
 from agents.agent_router import router_query
 import json
 from graph.context_extractor import full_retriever
-from prompt import enhancing_prompt, llm_prompt, schedule_prompt,process_json_ouput
+from config import enhancing_prompt, llm_prompt, schedule_prompt,process_json_ouput
 from dotenv import load_dotenv
 from openai import OpenAI
 import time

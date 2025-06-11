@@ -6,7 +6,7 @@ import os
 import json
 from agents.agent_router import router_query
 from graph.context_extractor import full_retriever
-from prompt import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
+from config import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
 from agents.agent_history import ContextAwareAgent
 from qdrant_client import QdrantClient
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode

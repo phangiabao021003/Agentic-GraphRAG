@@ -4,7 +4,6 @@ import json
 
 
 # Prompt để tìm đoạn hội thoại liên quan nhất từ các đoạn trong lịch sử
-def enhancing_prompt(query, context):
 
     # base_prompt=f"""Based on the context provided, please completely and relevant answer the user's question.
     # Your answer should be based on the context and chat history, not on any external information.
@@ -16,7 +15,7 @@ def enhancing_prompt(query, context):
     # {context}
     # Query: {query}
     # Answer: """
-    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
+enhancing_prompt="""You are a helpful AI assistant that is very good in explaining and expressing answer.
 you must give answer with detailed explanation based on the CONTEXT as possible.
 Give yourself room to think by extracting relevant passages from the context than use them to answer the query.
 Don't return the thinking, only return the answer.
@@ -33,10 +32,7 @@ RELEVANT PASSAGES: <extract relevant passages from the context here>
 ###
 ANSWER:
 """
-    return base_prompt
-def llm_prompt(query, context):
-
-    base_prompt=f"""You are a helpful AI assistant that is very good in explaining and expressing answer.
+llm_prompt="""You are a helpful AI assistant that is very good in explaining and expressing answer.
 you must give answer with detailed explanation with bullets, heading , subheading etc. based on the CONTEXT.
 always rename the title ,headings, subheading in your answer but keep the meaning same.
 make sure your answers are as explanatory as possible.
@@ -49,7 +45,7 @@ CONTEXT:
 ###
 ANSWER:
 """
-    return base_prompt
+
 
 def schedule_prompt(user_query):
     """
@@ -243,3 +239,26 @@ Now, here is the input JSON, let's return the corresponding schedule description
 ###JSON: "{json_input}" 
 ###Schedule description:"""
     return prompt
+
+react_prompt="""Answer the following questions as best you can. You must give answer in {lang}. You have access to the following tools:
+{tool_description}
+Use the following format, ##Thought field is require:
+
+##Thought: you should always think about what to do
+
+##Action: the action to take, should be one of [{tool_names}]
+
+##Action Input: the input to the action, should be different from the action input of the same action in previous steps.
+
+Observation: the result of the action
+
+... (this Thought/Action/Action Input/Observation can repeat N times)
+
+##Thought: I now know the final answer
+##Final Answer: the final answer to the original input question
+
+Begin! After each Action Input.
+
+Question: {question}
+Thought:{agent_scratchpad}
+"""

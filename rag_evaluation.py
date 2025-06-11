@@ -5,7 +5,7 @@ import time
 import csv
 from datetime import datetime
 from graph.context_extractor import full_retriever
-from prompt import enhancing_prompt
+from config import enhancing_prompt
 from qdrant_client import QdrantClient
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode

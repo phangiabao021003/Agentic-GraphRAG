@@ -7,7 +7,7 @@ import os
 import json
 from agents.agent_router import router_query
 from graph.context_extractor import full_retriever
-from prompt import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
+from config import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
 from agents.agent_history import ContextAwareAgent
 from qdrant_client import QdrantClient
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
@@ -99,12 +99,11 @@ def ask(query: str, temperature: Optional[float] = 0.5):
     return answer
 
 def handle_llm(new_query):
-    new_prompt = llm_prompt(new_query, context=None)
-    return stream(new_prompt, 0.5)
+    return "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
 
 def handle_rag( new_query,selected_doc_ids: list =None):
     context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
-    new_prompt = enhancing_prompt(new_query, context)
+    new_prompt = enhancing_prompt.format(new_query, context)
     return stream(new_prompt, 0.1)
 
 def handle_calendar(new_query):
@@ -117,12 +116,13 @@ def handle_calendar(new_query):
     events = json.loads(response.text)
     json_explain_prompt = process_json_ouput(events)
     answer = ask(json_explain_prompt, 0.1)
+    print("\nEvents:\n", events)
     for event in events:
         operation = event['operation']
         if operation in {"CREATE", "UPDATE", "DELETE"}:
-            st.session_state.calendar_agent.insert_event(json_input=event)
+            output =  st.session_state.calendar_agent.insert_event(event)
         elif operation == "READ":
-            output= st.session_state.calendar_agent.list_event(json_input=event)
+            output= st.session_state.calendar_agent.list_event(event)
     return output
 
 def embed_file(uploaded_file, existed_docs, qdrant_client, embeddings, sparse_embeddings):
