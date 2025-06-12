@@ -13,7 +13,7 @@ from qdrant_client import QdrantClient
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from calendar_tool.agent_calendar import GoogleCalendar
-from google import genai
+from search_agent.google import genai
 from pdf_processing import process_pdf_to_documents, create_vectordb
 
 load_dotenv()

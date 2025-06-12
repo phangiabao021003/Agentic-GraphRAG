@@ -16,7 +16,7 @@ from calendar_tool.agent_calendar import GoogleCalendar
 from openai import OpenAI
 from dotenv import load_dotenv
 from graph.graphdb_connection import GraphDBConnection
-from google import genai
+from search_agent.google import genai
 from pdf_processing import process_pdf_to_documents, create_vectordb
 import time
 from queue import Queue

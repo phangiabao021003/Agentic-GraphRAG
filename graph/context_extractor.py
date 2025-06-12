@@ -74,14 +74,15 @@ def rerank(query, docs, model, tokenizer, top_k=4):
     return [doc for doc, score in reranked[:top_k]]
 
 def full_retriever(graph, vector_store: QdrantVectorStore, question: str,doc_ids: list):
-    # graph_data = graph_retriever(question, graph)
-    filters = [
-        FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))
-        for doc_id in doc_ids
-    ]
-
-    # Tạo filter `must` kết hợp tất cả các điều kiện
-    final_filter = Filter(must=filters)
+    graph_data = graph_retriever(question, graph)
+    if doc_ids:
+        filters = [
+            FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))
+            for doc_id in doc_ids
+        ]
+        final_filter = Filter(must=filters)
+    else:
+        final_filter = None  
     vector_data = vector_store.similarity_search(question, k=7, filter=final_filter)
     reranked_docs = rerank(question, vector_data, reranker, tokenizer, top_k=3)
 
