@@ -40,9 +40,6 @@ make sure your answers are as explanatory as possible.
 QUERY: 
 {query}
 ###
-CONTEXT:
-{context}
-###
 ANSWER:
 """
 

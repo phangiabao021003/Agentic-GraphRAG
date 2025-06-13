@@ -1,6 +1,7 @@
 # Requires !pip install PyMuPDF tqdm spacy
 from langchain_qdrant import QdrantVectorStore, RetrievalMode
 import re
+from typing import Optional
 from langchain.schema import Document
 import fitz  # PyMuPDF
 from tqdm.auto import tqdm
@@ -13,7 +14,7 @@ from uuid import uuid4
 from qdrant_client.http.models import Filter
 from qdrant_client import QdrantClient, models
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+# from app_optimized import get_all_doc_ids_from_collection
 
 def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, min_token_length: int = 30):
     def text_formatter(text: str) -> str:
@@ -87,21 +88,25 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
     return documents
 
 def create_vectordb(client:QdrantClient,
-                    # collection_name: str,
+                    collection_name: Optional[str],
                     documents: list[Document],
                     existed_docs:set,
                     embeddings: HuggingFaceEmbeddings,
                     sparse_embeddings: FastEmbedSparse):
-    # collections = client.get_collections().collections
-    # collection_names = [c.name for c in collections]
-    # if collection_name not in collection_names:
-    #     client.create_collection(
-    #     collection_name=collection_name,
-    #     vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
-    #     sparse_vectors_config={
-    #         "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
-    #     },
-    # )
+    if collection_name:
+        collections = client.get_collections().collections
+        collection_names = [c.name for c in collections]
+        if "human-nutrition-text.pdf" not in collection_names:
+            client.create_collection(
+            collection_name="human-nutrition-text.pdf",
+            vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+            sparse_vectors_config={
+                "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
+            },
+        )
+    else:
+        collection_name = "human-nutrition-text.pdf"
+
     doc_id = next(iter(set(doc.metadata["doc_id"] for doc in documents)))
 
     existing = doc_id in existed_docs
@@ -111,7 +116,7 @@ def create_vectordb(client:QdrantClient,
     else:
         qdrant = QdrantVectorStore(
             client=client,
-            collection_name="human-nutrition-text.pdf",
+            collection_name=collection_name,
             embedding=embeddings,
             sparse_embedding=sparse_embeddings,
             retrieval_mode=RetrievalMode.HYBRID,
@@ -122,7 +127,11 @@ def create_vectordb(client:QdrantClient,
         qdrant.add_documents(documents=documents, ids=uuids)
     
 
-
+# existed_docs = get_all_doc_ids_from_collection(
+#             qdrant_client=QdrantClient(host="localhost", port=6333),
+#             collection_name="human-nutrition-text.pdf",
+#             limit=10
+#         )
 # project_root = Path(__file__).resolve().parent
 # pdf_path = project_root / "human-nutrition-text.pdf"
 # documents = process_pdf_to_documents(str(pdf_path))
@@ -131,4 +140,4 @@ def create_vectordb(client:QdrantClient,
 # embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 # client = QdrantClient(host="localhost", port=6333)
 # sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-# create_vectordb(client, collection_name, documents, embeddings, sparse_embeddings)
+# create_vectordb(client=client, collection_name=None, documents=documents, existed_docs=existed_docs, embeddings=embeddings, sparse_embeddings=sparse_embeddings)

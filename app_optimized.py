@@ -16,7 +16,7 @@ from calendar_tool.agent_calendar import GoogleCalendar
 from openai import OpenAI
 from dotenv import load_dotenv
 from graph.graphdb_connection import GraphDBConnection
-from search_agent.google import genai
+from google import genai
 from pdf_processing import process_pdf_to_documents, create_vectordb
 import time
 from queue import Queue
@@ -97,9 +97,14 @@ def ask(query: str, temperature: Optional[float] = 0.5):
     )
     answer = response.choices[0].message.content
     return answer
-
 def handle_llm(new_query):
-    return "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
+    new_prompt = llm_prompt.format(new_query)
+    response = st.session_state.gemini.models.generate_content(
+        model="gemini-2.0-pro",
+        contents=new_prompt,
+    )
+    answer = response.text
+    return answer
 
 def handle_rag( new_query,selected_doc_ids: list =None):
     context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
@@ -302,7 +307,7 @@ with st.sidebar:
     else:
         route_options = ["Auto", "LLM (answer without retrieving documents)", "Calendar (supporting manage personal schedule)"]
     
-    route = st.radio(
+    route_answer = st.radio(
         label="Select processing method",  # Thêm label
         options=route_options,
         label_visibility="visible"  # Đảm bảo label hiển thị
@@ -331,20 +336,20 @@ if user_query:
     new_query = st.session_state.his_agent.generate_reply(user_query)
     st.session_state.his_agent.add_to_history("user", new_query)
     print("\nNew-query:",new_query)
-    if route == "Auto":
-        route = router_query(new_query)
+    route_query = router_query(new_query)
+    if route_query== "chitchat":
+        output= "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
     else: 
-        route= route
-    if route == "llm" or route == "LLM (answer without retrieving documents)":
-        output = handle_llm( new_query)
-    elif route == "rag" or route== "RAG (answer with retrieving documents from vectorDB)":
-        selected_docs=st.session_state.get("selected_doc_ids", [])
-        output = handle_rag( new_query,selected_docs)
-    elif route == "calendar" or route== "Calendar (supporting manage personal schedule)":
-        output = handle_calendar(new_query)
-    else:
-        output = "Không xác định route phù hợp."
-
+        route_answer= route_answer
+        if route_answer == "LLM (Answer without retrieving documents)":
+            output = handle_llm(new_query)
+        elif route_answer == "RAG (Augmented Generation with Retrieving documents)":
+            selected_docs=st.session_state.get("selected_doc_ids", [])
+            output = handle_rag( new_query,selected_docs)
+        elif route_answer == "Calendar (Supporting manage personal schedule)":
+            output = handle_calendar(new_query)
+        else:
+            output = "Cannot process this query. Please select the appropriate route for processing."
     st.session_state.his_agent.add_to_history("assistant", output)
 
     # Hiển thị phản hồi

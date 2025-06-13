@@ -2,12 +2,12 @@ import requests
 def router_query(input: str) -> str:
     prompt = f"""
     Classify the topic of the input into one of the following categories:
-    - 'llm' if the input is a casual conversation, like 'How are you?' or 'Tell me a joke.'
-    - 'rag' if the user asks information nutrition, health, diet, or any question where the user mentions nutrition or RAG system.
+    - 'chitchat' if the input is a casual conversation, like 'How are you?' or 'Tell me a joke.'
+    - 'nutrition' if the user asks information nutrition, health, diet, or any question where the user mentions nutrition or RAG system.
     - 'calendar' if the input mentions to Create/Update/Read/Delete scheduling (IMPORTANT: Any query that refers to the schedule)
 
     The input: "{input}"
-    The classification should be one of the following: llm / rag / calendar
+    The classification should be one of the following: chitchat / nutrition / calendar
     Do not provide any other response.
     """
     response = requests.post(
