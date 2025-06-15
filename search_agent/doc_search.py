@@ -1,6 +1,5 @@
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from typing import List, Dict, Any, Optional
-import aisuite as ai
 import logging
 import spacy
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
@@ -11,7 +10,6 @@ import torch
 torch.classes.__path__ = []
 from langchain_qdrant import  QdrantVectorStore
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from vectordb.engine import VectorDBEngine
 from langchain_qdrant import RetrievalMode
 import config
 

@@ -60,37 +60,33 @@ class GoogleCalendar:
         }
 
         return extracted_events
-    # Insert event
-    def insert_event(self, json_input):
-
-        start_time = event[0]['parameters']['start']['dateTime']
-        end_time = event[0]['parameters']['end']['dateTime']
-        note,existed_event = self.list_event(timeMin=start_time, timeMax=end_time)
-        if existed_event == True:
-            noti= "There is already an event in this time slot."
-            return noti
-        else:
-            try:
-                event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
-                noti= f"Event created: {event.get('htmlLink')}"
-                return noti
-            except HttpError as e:
-                print(f"Error inserting event: {e}")
-                return None
-
-
     # List event
-    def list_event(self, timeMin: Optional[str] = None, timeMax: Optional[str] = None, json_input: Optional[dict] = None) -> List[dict]: 
+    def list_event(self, 
+                    timeMin: Optional[str] = None,
+                    timeMax: Optional[str] = None,
+                    json_input = None) -> List[dict]: 
         try:
-            # Nếu không có timeMin hoặc timeMax, lấy mặc định từ JSON input nếu có
-            if not timeMin or not timeMax:
-                if json_input:
-                    timeMin = json_input["parameters"].get("timeMin", None)  # Lấy timeMin từ JSON nếu có
-                    timeMax = json_input["parameters"].get("timeMax", None)  # Lấy timeMax từ JSON nếu có
-
-                if not timeMin or not timeMax:
-                    timeMin = datetime.now().isoformat()
-                    timeMax = (datetime.now() + timedelta(weeks=2)).isoformat()
+            if timeMin and timeMax:
+                # Nếu đã cung cấp timeMin và timeMax, sử dụng chúng (không chỉnh sửa gì thêm)
+                pass
+            # Nếu không có timeMin và timeMax, lấy từ JSON input hoặc mặc định
+            elif json_input and isinstance(json_input, dict):
+                # Nếu json_input là dict, lấy timeMin và timeMax từ đó
+                if json_input['parameters'].get('start') is not None:
+                    timeMin = json_input['parameters']['start']['dateTime']
+                    timeMax = json_input['parameters']['end']['dateTime']
+                else:
+                    timeMin = json_input["parameters"].get("timeMin", None)
+                    timeMax = json_input["parameters"].get("timeMax", None)
+            # Nếu không có json_input, sử dụng thời gian hiện tại và 2 tuần sau 
+            else:
+                timeMin = datetime.now().isoformat()
+                timeMax = (datetime.now() + timedelta(weeks=2)).isoformat()        
+            # Đảm bảo timeMin và timeMax có timezone
+            if not timeMin.endswith('Z') and not '+' in timeMin:
+                timeMin = dateutil.parser.isoparse(timeMin).replace(tzinfo=timezone.utc).isoformat()
+            if not timeMax.endswith('Z') and not '+' in timeMax:
+                timeMax = dateutil.parser.isoparse(timeMax).replace(tzinfo=timezone.utc).isoformat()
 
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
@@ -107,64 +103,238 @@ class GoogleCalendar:
             # Format lại chuỗi thời gian theo định dạng dd/mm/yyyy HH:MM
             time_min_str = dt_min.strftime("%d/%m/%Y %H:%M")
             time_max_str = dt_max.strftime("%d/%m/%Y %H:%M")
-            output = ""
+            
             if not events:
-                output += f"There is no schedule from {time_min_str} to {time_max_str}."
-                return output, False
+                return f"📅 There is no schedule from {time_min_str} to {time_max_str}.", False
             else:
-                output += f"Events since {timeMin} to {timeMax}:"
+                output = f"📅 Schedule list from {time_min_str} to {time_max_str}:\n\n"
                 for event in events:
-                    summary = event.get('summary', 'No summary')
-                    start = event['start'].get('dateTime', event['start'].get('date', 'There is no start time'))
-                    end = event['end'].get('dateTime', event['end'].get('date', 'There is no end time'))
-                    location = event.get('location', 'No mentioned location')
-                    output += f"Summary: {summary}\n"
-                    output += f"Start time: {start}\n"
-                    output += f"End time: {end}\n"
-                    output += f"Location: {location}\n"
-                    output += "-" * 50 + "\n"
+                    # Parse thời gian
+                    start_dt = dateutil.parser.isoparse(event['start'].get('dateTime', event['start'].get('date')))
+                    end_dt = dateutil.parser.isoparse(event['end'].get('dateTime', event['end'].get('date')))
+                    
+                    # Format thời gian
+                    start_str = start_dt.strftime("%d/%m/%Y %H:%M")
+                    end_str = end_dt.strftime("%d/%m/%Y %H:%M")
+                    
+                    # Lấy thông tin sự kiện
+                    summary = event.get('summary', '')
+                    location = event.get('location', '')
+                    
+                    # Format output cho từng sự kiện
+                    output += f"### {summary}\n"
+                    output += f"⏰ Duration: {start_str} - {end_str}\n"
+                    if location != 'No location':
+                        output += f"📍 Location: {location}\n"
+                    output += "---\n\n"
+                
                 return output, True
 
         except HttpError as e:
             print(f"Error listing events: {e}")
-            return []
-
+            return "❌ Error in listing events", False
+    # Insert event
+    def insert_event(self, json_input):
+        event = self.extract_event_data(json_input)
+        # Extract event data from JSON input
+        timeMin = json_input['parameters']['start']['dateTime']
+        timeMax = json_input['parameters']['end']['dateTime']
+        
+        # Get recurrence rule if exists
+        recurrence = json_input['parameters'].get('recurrence', [])
+        if recurrence:
+            # Parse RRULE to get days of week
+            rrule = recurrence[0].split(':')[1]
+            days = rrule.split(';')[1].split('=')[1].split(',')
+            
+            # Convert days to datetime objects
+            start_dt = dateutil.parser.isoparse(timeMin)
+            end_dt = dateutil.parser.isoparse(timeMax)
+            duration = end_dt - start_dt
+            
+            # Check each day in the recurrence pattern
+            conflicts = []
+            successful_events = []
+            
+            for i in range(4):  # Check next 4 weeks
+                for day in days:
+                    # Calculate the date for this day
+                    current_date = start_dt + timedelta(days=i*7)
+                    while current_date.strftime('%a').upper()[:2] != day:
+                        current_date += timedelta(days=1)
+                    
+                    # Create event time for this day
+                    event_start = current_date.replace(
+                        hour=start_dt.hour,
+                        minute=start_dt.minute
+                    )
+                    event_end = event_start + duration
+                    
+                    # Check for conflicts
+                    note, has_conflict = self.list_event(
+                        timeMin=event_start.isoformat(),
+                        timeMax=event_end.isoformat()
+                    )
+                    
+                    if has_conflict:
+                        conflicts.append({
+                            'day': current_date.strftime('%A'),
+                            'date': current_date.strftime('%Y-%m-%d'),
+                            'time': f"{event_start.strftime('%H:%M')} - {event_end.strftime('%H:%M')}",
+                            'conflict_details': note
+                        })
+                    else:
+                        # Create single event for this day
+                        single_event = event.copy()
+                        single_event['start']['dateTime'] = event_start.isoformat()
+                        single_event['end']['dateTime'] = event_end.isoformat()
+                        single_event.pop('recurrence', None)  # Remove recurrence for single event
+                        
+                        try:
+                            created_event = self.service.events().insert(
+                                calendarId=self.calendar_id,
+                                body=single_event
+                            ).execute()
+                            successful_events.append({
+                                'day': current_date.strftime('%A'),
+                                'date': current_date.strftime('%Y-%m-%d'),
+                                'time': f"{event_start.strftime('%H:%M')} - {event_end.strftime('%H:%M')}",
+                                'link': created_event.get('htmlLink')
+                            })
+                        except HttpError as e:
+                            print(f"Error creating event for {current_date}: {e}")
+            
+            # Prepare response message
+            response = ""
+            if conflicts:
+                response += "⚠️ Schedule conflicts found:\n"
+                for conflict in conflicts:
+                    response += f"- {conflict['day']} ({conflict['date']}) at {conflict['time']}\n"
+                    response += f"  Conflict details: {conflict['conflict_details']}\n"
+            
+            if successful_events:
+                response += "\n✅ Successfully created events for:\n"
+                for event in successful_events:
+                    response += f"- {event['day']} ({event['date']}) at {event['time']}\n"
+                    response += f"  Link: {event['link']}\n"
+            
+            return response
+            
+        else:
+            # Handle non-recurring event
+            note, existed_event = self.list_event(json_input=json_input)
+            if existed_event==True:
+                return f"⚠️ Schedule conflict found:\n{note}"
+            else:
+                try:
+                    event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
+                    return f"✅ Event created: {event.get('htmlLink')}"
+                except HttpError as e:
+                    print(f"Error inserting event: {e}")
+                    return None
     # Get event
-    def get_event(self, event_id: str) -> Optional[dict]:
+    def get_event(self, json_input: Optional[dict] = None) -> Optional[dict]:
         try:
-            event = self.service.events().get(calendarId=self.calendar_id, eventId=event_id).execute()
-            return event
+            # Lấy thời gian từ JSON input
+            timeMin = json_input["parameters"].get("timeMin", None)
+            timeMax = json_input["parameters"].get("timeMax", None)
+
+            # Đảm bảo timeMin và timeMax có timezone
+            if not timeMin.endswith('Z') and not '+' in timeMin:
+                timeMin = dateutil.parser.isoparse(timeMin).replace(tzinfo=timezone.utc).isoformat()
+            if not timeMax.endswith('Z') and not '+' in timeMax:
+                timeMax = dateutil.parser.isoparse(timeMax).replace(tzinfo=timezone.utc).isoformat()
+
+            # Lấy danh sách sự kiện trong khoảng thời gian
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=timeMin,
+                timeMax=timeMax,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            events = events_result.get('items', [])
+            if not events:
+                return None
+
+            # Tạo danh sách event_id và thông tin chi tiết
+            event_ids = []
+            for event in events:
+                event_id = event['id']
+                event_ids.append(event_id)
+
+            return event_ids
+
         except HttpError as e:
-            print(f"Error getting event: {e}")
+            print(f"Error getting events: {e}")
             return None
 
-    # Update event
-    def update_event(self, event_id: str, event: dict) -> Optional[dict]:
+    def delete_event(self, event_id: Optional[str]=None,json_input: Optional[dict] = None) -> bool:
         try:
-            body = self.get_event(event_id)
+            output=""
+            if event_id:
+                self.service.events().delete(calendarId=self.calendar_id, eventId=event_id).execute()
+                output += "Completing delete event"
+            else:
+                if json_input:
+                    timeMin = json_input["parameters"].get("timeMin", None)
+                    timeMax = json_input["parameters"].get("timeMax", None)
+                    if not timeMin.endswith('Z') and not '+' in timeMin:
+                        timeMin = dateutil.parser.isoparse(timeMin).replace(tzinfo=timezone.utc).isoformat()
+                    if not timeMax.endswith('Z') and not '+' in timeMax:
+                        timeMax = dateutil.parser.isoparse(timeMax).replace(tzinfo=timezone.utc).isoformat()
+                    events_result = self.service.events().list(
+                        calendarId=self.calendar_id,
+                        timeMin=timeMin,
+                        timeMax=timeMax,
+                        singleEvents=True,
+                        orderBy='startTime'
+                    ).execute()
 
-            # Update the event
-            for key, value in event.items():
-                body[key] = value
+                    events = events_result.get('items', [])
+                    for event in events:
+                        event_id=event["id"]                    
+                        self.service.events().delete(calendarId=self.calendar_id, eventId=event_id).execute()
+                    output += "Completing delete events"
+                else:
+                    output += "Provide events need to be deleted"
+            return output
+        except HttpError as e:
+            print(f"Error deleting event: {e}")
+    # Update event
+    def update_event(self, json_input: Optional[dict] = None) -> Optional[dict]:
+        try:
+            output=""
+            timeMin = json_input['parameters']['start']['dateTime']
+            timeMax = json_input['parameters']['end']['dateTime']
+            if not timeMin.endswith('Z') and not '+' in timeMin:
+                timeMin = dateutil.parser.isoparse(timeMin).replace(tzinfo=timezone.utc).isoformat()
+            if not timeMax.endswith('Z') and not '+' in timeMax:
+                timeMax = dateutil.parser.isoparse(timeMax).replace(tzinfo=timezone.utc).isoformat()
+            events_result = self.service.events().list(
+                calendarId=self.calendar_id,
+                timeMin=timeMin,
+                timeMax=timeMax,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
 
-            event = self.service.events().update(calendarId=self.calendar_id, eventId=event_id, body=body).execute()
-            return event
+            events = events_result.get('items', [])
+            for event in events:
+                event_id=event["id"]  
+                self.delete_event(event_id=event_id)
+            
+            self.insert_event(json_input)
+            output+= "Completing update event"
+            
+            return output
         except HttpError as e:
             print(f"Error updating event: {e}")
             return None
 
     # Delete event
-    def delete_event(self, event_id: str) -> bool:
-        try:
-            if self.get_event(event_id)['status'] == 'cancelled':
-                return False
-            
-            self.service.events().delete(calendarId=self.calendar_id, eventId=event_id).execute()
-            return True
-        except HttpError as e:
-            print(f"Error deleting event: {e}")
-            return False
-
+    
     def query_free_busy(self, timeMin: Optional[str] = None, timeMax: Optional[str] = None, items: Optional[List[str]] = None) -> List[dict]:
         try:
             # Default values if not provided

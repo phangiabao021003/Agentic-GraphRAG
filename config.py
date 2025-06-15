@@ -20,7 +20,7 @@ you must give answer with detailed explanation based on the CONTEXT as possible.
 Give yourself room to think by extracting relevant passages from the context than use them to answer the query.
 Don't return the thinking, only return the answer.
 ONLY USING RELEVANT PASSAGES to answer the question.
-if no relevant information found from CONTEXT just reply with "The document does not contain the information mentioned in the question"
+If no relevant information found from CONTEXT just reply with "The document does not contain the information mentioned in the question"
 ###
 QUERY: 
 {query}
@@ -88,7 +88,7 @@ def schedule_prompt(user_query):
     "location": string,
     "attendees": [{{"email": string, "displayName": string}}],
     "colorId": integer (1-11),
-    "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY..."],
+    "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY...,UNTIL=string"],
 
     // READ
     "timeMin": string, // For query filtering
@@ -163,7 +163,7 @@ The input json format structured as the example below:
       "location": string,
       "attendees": [{{"email": string, "displayName": string}}],
       "colorId": integer (1-11),
-      "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY..."],
+      "recurrence": ["RRULE:FREQ=WEEKLY|MONTHLY...;UNTIL=string"],
 
       // READ (query)
       "timeMin": string,
@@ -197,7 +197,7 @@ The input json format structured as the example below:
         {{"email": "le.thi.b@example.com", "displayName": "Le Thi B"}}
       ],
       "colorId": 5,
-      "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=TU"]
+      "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=TU";UNTIL=2025-06-29T18:30:00+07:00]
     }},
     "metadata": {{
       "createdAt": "2025-05-25T15:00:00+07:00",

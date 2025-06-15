@@ -98,9 +98,9 @@ def ask(query: str, temperature: Optional[float] = 0.5):
     answer = response.choices[0].message.content
     return answer
 def handle_llm(new_query):
-    new_prompt = llm_prompt.format(new_query)
+    new_prompt = llm_prompt.format(query=new_query)
     response = st.session_state.gemini.models.generate_content(
-        model="gemini-2.0-pro",
+        model="gemini-2.0-flash",
         contents=new_prompt,
     )
     answer = response.text
@@ -108,7 +108,8 @@ def handle_llm(new_query):
 
 def handle_rag( new_query,selected_doc_ids: list =None):
     context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
-    new_prompt = enhancing_prompt.format(new_query, context)
+    print("Context:",context)
+    new_prompt = enhancing_prompt.format(query=new_query, context= context)
     return stream(new_prompt, 0.1)
 
 def handle_calendar(new_query):
@@ -122,12 +123,18 @@ def handle_calendar(new_query):
     json_explain_prompt = process_json_ouput(events)
     answer = ask(json_explain_prompt, 0.1)
     print("\nEvents:\n", events)
+    output = ""
     for event in events:
         operation = event['operation']
-        if operation in {"CREATE", "UPDATE", "DELETE"}:
-            output =  st.session_state.calendar_agent.insert_event(event)
+        if operation == "CREATE":
+            output = st.session_state.calendar_agent.insert_event(event)
+        elif operation == "UPDATE":
+            output= st.session_state.calendar_agent.update_event(event)
+        elif operation== "DELETE":
+            output == st.session_state.calendar_agent.delete_event(json_input=event)
         elif operation == "READ":
-            output= st.session_state.calendar_agent.list_event(event)
+            output, has_events,event_ids = st.session_state.calendar_agent.list_event(json_input=event)
+            print("Event_ids:",event_ids)
     return output
 
 def embed_file(uploaded_file, existed_docs, qdrant_client, embeddings, sparse_embeddings):
@@ -141,7 +148,7 @@ def embed_file(uploaded_file, existed_docs, qdrant_client, embeddings, sparse_em
     documents = process_pdf_to_documents(file_path)
     # Create collection if it doesn't exist
     result = create_vectordb(client=qdrant_client, 
-                    # collection_name=collection_name,
+                    collection_name=None,
                     documents=documents, 
                     existed_docs=existed_docs,
                     embeddings=embeddings,
@@ -170,10 +177,13 @@ def process_file_async(uploaded_file, existed_docs, status_queue, qdrant_client,
         else:
             status_queue.put(("success", "✅ Successfully ingested document!"))
             print("Successfully ingested document!")
+        
     except Exception as e:
         error_msg = f"❌ Error ingesting document: {str(e)}"
         status_queue.put(("error", error_msg))
+        time.sleep(5)
         print("Error:", error_msg)  # Debug print
+        status_queue.put(("clear", ""))
 
 def get_all_doc_ids_from_collection(qdrant_client:QdrantClient,collection_name: str, limit: int = 100) -> list:
     
@@ -303,9 +313,9 @@ with st.sidebar:
 
     # Tùy chọn chọn route xử lý
     if existed_docs:  # Nếu có doc_ids, cho phép chọn "RAG"
-        route_options=["Auto", "LLM (answer without retrieving documents)", "RAG (answer with retrieving documents from vectorDB)", "Calendar (supporting manage personal schedule)"]
+        route_options=["LLM (answer without retrieving documents)", "RAG (Augmented Generation with Retrieving documents)", "Calendar (Supporting manage personal schedule)"]
     else:
-        route_options = ["Auto", "LLM (answer without retrieving documents)", "Calendar (supporting manage personal schedule)"]
+        route_options = ["LLM (answer without retrieving documents)", "Calendar (Supporting manage personal schedule)"]
     
     route_answer = st.radio(
         label="Select processing method",  # Thêm label
@@ -337,19 +347,27 @@ if user_query:
     st.session_state.his_agent.add_to_history("user", new_query)
     print("\nNew-query:",new_query)
     route_query = router_query(new_query)
+    print("\nRoute query:", route_query)
     if route_query== "chitchat":
         output= "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
-    else: 
+    elif route_query == "nutrition": 
         route_answer= route_answer
-        if route_answer == "LLM (Answer without retrieving documents)":
+        print("\nRoute answer:", route_answer)
+        if route_answer == "LLM (answer without retrieving documents)":
             output = handle_llm(new_query)
         elif route_answer == "RAG (Augmented Generation with Retrieving documents)":
             selected_docs=st.session_state.get("selected_doc_ids", [])
             output = handle_rag( new_query,selected_docs)
         elif route_answer == "Calendar (Supporting manage personal schedule)":
+            output = "This query is related to nutrition. Please select the appropriate route for processing."
+    else:
+        if route_answer== "LLM (answer without retrieving documents)":
+            output = handle_llm(new_query)
+        elif route_answer== "RAG (answer with retrieving documents from vectorDB)":
+            selected_docs=st.session_state.get("selected_doc_ids", [])
+            output = handle_rag( new_query,selected_docs)
+        else: 
             output = handle_calendar(new_query)
-        else:
-            output = "Cannot process this query. Please select the appropriate route for processing."
     st.session_state.his_agent.add_to_history("assistant", output)
 
     # Hiển thị phản hồi
