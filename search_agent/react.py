@@ -10,7 +10,7 @@ import config
 from openai import OpenAI
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+from langchain_qdrant import QdrantVectorStore
 
 class ReActPipeline:
     """
@@ -18,21 +18,17 @@ class ReActPipeline:
     Supports tools: Wikipedia, Google Search, and LLM calls
     """
     
-    def __init__(
-        self    ):
+    def __init__(self, 
+                 vector_store: QdrantVectorStore,
+                 client: OpenAI):
         self.max_iterations = 3
-        self.tool_registry = ToolRegistry()
-        
-        # Initialize AI client
-        self.client= OpenAI(
-            base_url='http://localhost:11434/v1',
-            api_key='dolphin-llama3'
-        )
+        self.tool_registry = ToolRegistry(vector_store=vector_store)
+        self.client = client
         # Reflection engine for reasoning
 
-    async def _execute_action(self, action: str, action_input: str, docsearch_setting: Optional[Any]=None) -> dict:
+    def _execute_action(self, action: str, action_input: str, docsearch_setting: Optional[Any]=None) -> dict:
         """Execute a tool action and return the observation"""
-        return await self.tool_registry.execute_tool_action(action, action_input,  docsearch_setting)     
+        return self.tool_registry.execute_tool_action(action, action_input,  docsearch_setting)     
 
     def _parse_react_response(self, response: str) -> Dict[str, str]:
         """Parse ReAct response to extract thought, action, and action input"""
@@ -71,7 +67,7 @@ class ReActPipeline:
             thoughts += f"\nObservation: " + step["observation"] + "\nThought:"
         return thoughts
 
-    async def stream_completion(
+    def stream_completion(
             self,
             messages: List[Dict[str, str]],
             callback: Optional[Callable[[str], None]] = None,
@@ -83,6 +79,7 @@ class ReActPipeline:
             max_tokens=2048,
             stream=True,
             temperature=0.5,
+            **kwargs
         )
         collected_message = ""
         for chunk in response:
@@ -94,8 +91,9 @@ class ReActPipeline:
                     time.sleep(0.01)  # Thêm độ trễ giữa các chunk để dễ đọc hơn
         return collected_message
 
-    async def stream(
-        self, original_question: str,
+    def stream(
+        self, 
+        original_question: str,
         messages: List[Dict[str, str]], 
         top_k: int,
         doc_ids:list
@@ -108,9 +106,6 @@ class ReActPipeline:
 
         max_iterations = self.max_iterations
         conversation_log = []
-        completion_tokens = 0
-        prompt_tokens = 0
-        total_tokens = 0
         iteration = 0
 
         while iteration < max_iterations:
@@ -124,11 +119,9 @@ class ReActPipeline:
                                                                 lang=language)
                 messages.extend([{"role": "user", "content": prompt}])
 
-                llm_response = ""
-                async for chunk in self.stream_completion( messages, stop=["Observation:"], stream=True, stream_options={
+                llm_response = self.stream_completion( messages, stop=["Observation:"], stream_options={
                     "include_usage": True
-                }):
-                        llm_response += chunk
+                })
 
                 parsed = self._parse_react_response(llm_response)
 
@@ -139,26 +132,18 @@ class ReActPipeline:
                     action = parsed['action']
                     action_input = parsed['action_input']
 
-                    observation = await self._execute_action(
+                    observation = self._execute_action(
                         action,
                         action_input,
                         {
                             "original_question": original_question,
-                            "top_k": top_k,
                             "doc_ids": doc_ids,
-                            
                         }
                     )
                     if "usage" in observation.keys():
                         completion_tokens += observation["usage"]["completion_tokens"]
                         prompt_tokens += observation["usage"]["prompt_tokens"]
                         total_tokens += observation["usage"]["total_tokens"]
-                        
-                    yield "data: " + json.dumps({
-                        "type": "observation",
-                        "content": f"\n\nObservation:\n {observation['content']}\n\n"
-                    }) + "\n\n"
-
                     conversation_log.append({
                         "iteration": iteration,
                         "log": parsed["thought"] + f"""
@@ -168,7 +153,8 @@ class ReActPipeline:
                         "observation": observation['content']
                     })
                 else:
-                    break
+                    output = "No valid action found in response. Please try again."
+
 
             except Exception as e:
                 logger.error(f"Error in ReAct iteration {iteration}: {str(e)}")
@@ -179,12 +165,6 @@ class ReActPipeline:
                 {"role": "user", "content": "Please provide a Final Answer based on the information gathered so far."}
             ]
 
-            async for chunk in self.stream_completion( final_messages, stream=True, stream_options={
-                    "include_usage": True
-                }):
-                if type(chunk) is str:
-                    yield "data: " + json.dumps({
-                        "type": "token",
-                        "content": chunk
-                    }) + "\n\n"
-            else:
+            output = self.stream_completion( final_messages, 
+                                            stream_options={"include_usage": True})
+            return output

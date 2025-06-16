@@ -20,7 +20,7 @@ class WikipediaTool:
         self.name = "wikipedia"
         self.description = "Search engine from Wikipedia, retrieving relevant wiki page. Useful when you need to get holistic knowledge about people, places, companies, historical events, or other subjects. Input should be a search query."
     
-    async def search(self, query: str, max_results: int = 1) -> Dict[str, Any]:
+    def search(self, query: str, max_results: int = 1) -> Dict[str, Any]:
         """Search Wikipedia for information"""
         try:
             search_url = "https://en.wikipedia.org/w/api.php"
@@ -35,8 +35,8 @@ class WikipediaTool:
                 'srprop': 'snippet|titlesnippet|size|timestamp'
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, params=search_params) as response:
+            with aiohttp.ClientSession() as session:
+                with session.get(search_url, params=search_params) as response:
                     if response.status != 200:
                         return {
                             "success": False,
@@ -44,7 +44,7 @@ class WikipediaTool:
                             "content": ""
                         }
                     
-                    data = await response.json()
+                    data =  response.json()
                     search_results = data.get('query', {}).get('search', [])
                     
                     if not search_results:
@@ -70,9 +70,9 @@ class WikipediaTool:
                             'inprop': 'url'
                         }
                         
-                        async with session.get(search_url, params=extract_params) as extract_response:
+                        with session.get(search_url, params=extract_params) as extract_response:
                             if extract_response.status == 200:
-                                extract_data = await extract_response.json()
+                                extract_data =  extract_response.json()
                                 pages = extract_data.get('query', {}).get('pages', {})
                                 
                                 for page_id, page_info in pages.items():

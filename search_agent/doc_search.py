@@ -1,3 +1,4 @@
+from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from typing import List, Dict, Any, Optional
 import logging
@@ -34,8 +35,11 @@ class DocSearchTool():
             cls._instance = super(DocSearchTool, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self,
+                 vector_store: QdrantVectorStore):
+        
         if not self._initialized:
+            self.vector_store = vector_store
             self.__class__._initialized = True
             logger.info("Initialized DocSearchTool")
 
@@ -87,7 +91,7 @@ class DocSearchTool():
         reranked = sorted(scored_docs, key=lambda x: x[1], reverse=True)
         return [doc for doc, score in reranked[:top_k]]
 
-    async def full_retriever(graph, vector_store: QdrantVectorStore, question: str,doc_ids: list):
+    def full_retriever(graph, vector_store: QdrantVectorStore, question: str,doc_ids: list):
         graph_data = DocSearchTool.graph_retriever(question, graph)
         if doc_ids:
             filters = [
@@ -117,17 +121,16 @@ class DocSearchTool():
         
         return joined_contents
     
-    async def _run_tool(self, 
+    def _run_tool(self, 
                         original_question: str, 
-                        top_k: int,
                         doc_ids: list) -> str:
         try:
 
 
             # Get relevant documents pipeline
-            relevant_docs = await self.full_retriever(
-                query=original_question,
-                top_k=top_k,
+            relevant_docs =  self.full_retriever(
+                vector_store=self.vector_store,
+                question=original_question,
                 doc_ids=doc_ids
             )      
             if not relevant_docs:
@@ -142,5 +145,6 @@ class DocSearchTool():
             logger.error(f"docsearch query error: {str(e)}")
             return {
                 "success": False,
-                "content": f"Error during document search: {str(e)}"
+                "error": f"Error during document search: {str(e)}",
+                "content": f"Document search failed: {str(e)}"
             }

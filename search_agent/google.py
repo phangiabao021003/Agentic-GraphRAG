@@ -21,7 +21,7 @@ class GoogleTool:
         self.name = "google"
         self.description = "A search engine retrieving top search results as snippets from Google. Input should be a search query."
     
-    async def search(self, query: str, max_results: int = 3) -> Dict[str, Any]:
+    def search(self, query: str, max_results: int = 3) -> Dict[str, Any]:
         """Search Google for information"""
         try:
             api_key = getattr(config, "SERPAPI_API_KEY", None)
@@ -40,8 +40,8 @@ class GoogleTool:
                 "num": max_results
             }
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, params=params) as response:
+            with aiohttp.ClientSession() as session:
+                with session.get(search_url, params=params) as response:
                     if response.status != 200:
                         return {
                             "success": False,
@@ -49,7 +49,7 @@ class GoogleTool:
                             "content": ""
                         }
 
-                    data = await response.json()
+                    data =  response.json()
                     organic_results = data.get("organic_results", [])[:max_results]
 
                     if not organic_results:

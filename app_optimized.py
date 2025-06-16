@@ -5,6 +5,7 @@ import threading
 from typing import Optional
 import os
 import json
+from search_agent.react import ReActPipeline
 from agents.agent_router import router_query
 from graph.context_extractor import full_retriever
 from config import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
@@ -66,6 +67,9 @@ def initialize_connections():
         st.session_state.driver.setup_index()
         st.session_state.initialized = True
 
+        #Initialize RAGPipeline
+        st.session_state.react_pipeline = ReActPipeline(vector_store=st.session_state.vectordb,
+                                                        client=st.session_state.client)
 # Gọi hàm khởi tạo
 initialize_connections()
 
@@ -107,10 +111,19 @@ def handle_llm(new_query):
     return answer
 
 def handle_rag( new_query,selected_doc_ids: list =None):
-    context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
-    print("Context:",context)
-    new_prompt = enhancing_prompt.format(query=new_query, context= context)
-    return stream(new_prompt, 0.1)
+    
+    # context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
+    # print("Context:",context)
+    # new_prompt = enhancing_prompt.format(query=new_query, context= context)
+    # return stream(new_prompt, 0.1)
+    output= st.session_state.react_pipeline.stream(
+        original_question=new_query,
+        messages=[{"role": "user", "content": new_query}],
+        top_k=5,
+        doc_ids=selected_doc_ids
+    )
+    print("\nOutput from ReAct Pipeline:", output)
+    return output
 
 def handle_calendar(new_query):
     new_prompt = schedule_prompt(new_query)

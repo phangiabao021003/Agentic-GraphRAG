@@ -2,15 +2,15 @@ from typing import Any, Dict, List, Optional
 from search_agent.doc_search import DocSearchTool
 from search_agent.wikipedia import WikipediaTool
 from search_agent.google import GoogleTool
-
+from langchain_qdrant import QdrantVectorStore
 
 class ToolRegistry:
     """Manages and orchestrates all available tools"""
-    
-    def __init__(self):
+
+    def __init__(self, vector_store: QdrantVectorStore):
         self.wikipedia = WikipediaTool()
         self.google = GoogleTool()
-        self.docsearch = DocSearchTool()
+        self.docsearch = DocSearchTool(vector_store=vector_store)
 
         # Tool definitions for LLM
         self.tool_definitions = {
@@ -35,16 +35,7 @@ class ToolRegistry:
                 "description": "A storage that contains internal documents. If you lack any specific private information to answer the question, you can search in this document storage. Furthermore, if you are unsure about which document that the user refers to, likely the user already selects the target document in this document storage, you just need to do normal search. If possible, formulate the search query as specific as possible.",
                 "parameters": {
                     "original_question": "question",
-                    "chat_history": "history of chat",
-                    "n_last_interactions": "",
-                    "max_context_rewrite_length": "",
-                    "top_k": "",
-                    "collection_id": "",
-                    "tenant_id": "",
-                    "user_group_id": "",
-                    "retrieval_settings": "",
-                    "reasoning_settings": "",
-                },
+                    "doc_ids": "List of document IDs to search in the document storage"},
                 "example": ""
             }
         }
@@ -62,19 +53,18 @@ class ToolRegistry:
         
         return "\n".join(descriptions)
     
-    async def execute_tool_action(self, action: str, action_input: str, docsearch_setting: Optional[Any]=None) -> dict:
+    def execute_tool_action(self, action: str, action_input: str, docsearch_setting: Optional[Any]=None) -> dict:
         """Execute a tool action and return formatted result"""
         action = action.lower().strip()
         
         try:
             if action == "wikipedia":
-                result = await self.wikipedia.search(query=action_input)
+                result =  self.wikipedia.search(query=action_input)
             elif action == "google":
-                result = await self.google.search(query=action_input)
+                result =  self.google.search(query=action_input)
             elif action == "docsearch":
-                result = await self.docsearch._run_tool(
+                result =  self.docsearch._run_tool(
                         original_question=docsearch_setting["original_question"],
-                        top_k=docsearch_setting["top_k"],
                         doc_ids=docsearch_setting["doc_ids"]
 
                 )

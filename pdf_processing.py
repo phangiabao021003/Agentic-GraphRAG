@@ -11,10 +11,45 @@ from spacy.lang.en import English
 from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
 from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
 from uuid import uuid4
+
 from qdrant_client.http.models import Filter
 from qdrant_client import QdrantClient, models
 from langchain_community.embeddings import HuggingFaceEmbeddings
-# from app_optimized import get_all_doc_ids_from_collection
+
+def get_all_doc_ids_from_collection(qdrant_client:QdrantClient,collection_name: str, limit: int = 100) -> list:
+    
+    all_doc_ids = set()
+    scroll_offset = None
+
+    while True:
+        # Lấy dữ liệu từ Qdrant
+        response = qdrant_client.scroll(
+            collection_name=collection_name,
+            scroll_filter=None,  # Không sử dụng filter
+            limit=limit,  # Số lượng điểm lấy mỗi lần
+            offset=scroll_offset,  # Vị trí bắt đầu scroll
+            with_payload=True,  # Bao gồm payload để lấy doc_id
+            with_vectors=False  # Không lấy vectors
+        )
+        
+        # Duyệt qua các điểm (points) trả về
+        points = response[0]
+        if not points:
+            break  # Nếu không còn dữ liệu thì thoát vòng lặp
+
+        # Lấy doc_id từ metadata trong payload
+        for point in points:
+            metadata = point.payload.get("metadata", {})  # Lấy metadata từ payload
+            doc_id = metadata.get("doc_id")  # Lấy doc_id từ metadata
+            if doc_id:
+                all_doc_ids.add(doc_id)  # Thêm doc_id vào set (để tránh trùng lặp)
+
+        # Lấy scroll_offset để tiếp tục phân trang
+        scroll_offset = response[1]
+        if scroll_offset is None:
+            break  # Nếu không còn dữ liệu thì thoát
+
+    return sorted(all_doc_ids)
 
 def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, min_token_length: int = 30):
     def text_formatter(text: str) -> str:
@@ -125,19 +160,25 @@ def create_vectordb(client:QdrantClient,
 
         uuids = [str(uuid4()) for _ in range(len(documents))]
         qdrant.add_documents(documents=documents, ids=uuids)
-    
 
-# existed_docs = get_all_doc_ids_from_collection(
-#             qdrant_client=QdrantClient(host="localhost", port=6333),
-#             collection_name="human-nutrition-text.pdf",
-#             limit=10
-#         )
-# project_root = Path(__file__).resolve().parent
-# pdf_path = project_root / "human-nutrition-text.pdf"
-# documents = process_pdf_to_documents(str(pdf_path))
-# collection_name = pdf_path.name
-# # Tạo embedding model từ Hugging Face
-# embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-# client = QdrantClient(host="localhost", port=6333)
-# sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-# create_vectordb(client=client, collection_name=None, documents=documents, existed_docs=existed_docs, embeddings=embeddings, sparse_embeddings=sparse_embeddings)
+# Tạo embedding model từ Hugging Face
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+client = QdrantClient(host="localhost", port=6333)
+sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+collections = client.get_collections().collections
+collection_names = [c.name for c in collections]
+if "human-nutrition-text.pdf" not in collection_names:
+            client.create_collection( collection_name="human-nutrition-text.pdf",
+                                      vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+                                      sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))})
+existed_docs = get_all_doc_ids_from_collection(
+            qdrant_client=QdrantClient(host="localhost", port=6333),
+            collection_name="human-nutrition-text.pdf",
+            limit=10
+        )
+project_root = Path(__file__).resolve().parent
+pdf_path = project_root / "human-nutrition-text.pdf"
+documents = process_pdf_to_documents(str(pdf_path))
+collection_name = pdf_path.name
+
+create_vectordb(client=client, collection_name=None, documents=documents, existed_docs=existed_docs, embeddings=embeddings, sparse_embeddings=sparse_embeddings)
