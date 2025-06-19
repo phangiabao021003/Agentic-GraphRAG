@@ -9,7 +9,7 @@ class ContextAwareAgent:
     def add_to_history(self, role, content):
         self.chat_history.append({"role": role, "content": content})
     def delete_history(self):
-        self.chat_history = self.chat_history.clear()
+        self.chat_history = []
     def should_use_history(self, message: str) -> bool:
         prompt = f""" The user has just asked the following question: "{message}". 
 Given this USER QUESTION, which might reference context in the chat history (e.g., through coreference like "them", "it", or "previously mentioned"),

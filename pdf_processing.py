@@ -67,7 +67,7 @@ def process_pdf_to_documents(pdf_path: str, num_sentence_chunk_size: int = 10, m
         text = page.get_text()
         text = text_formatter(text)
         pages_and_texts.append({
-            "page_number": page_number - 41,  # Offset page number (tuỳ mục đích)
+            "page_number": page_number,  # Offset page number (tuỳ mục đích)
             "page_char_count": len(text),
             "page_word_count": len(text.split(" ")),
             "page_sentence_count_raw": len(text.split(". ")),

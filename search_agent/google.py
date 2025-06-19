@@ -1,94 +1,28 @@
-import aiohttp
-import logging
 import config
-from typing import Dict, Any
+from dotenv import load_dotenv
+import os
+from serpapi import GoogleSearch
+# Nạp biến môi trường từ tệp .env
+load_dotenv()
 
-logger = logging.getLogger(__name__)
+# Lấy giá trị biến SERPAPI_API_KEY từ môi trường
+api_key = os.getenv("SERPAPI_API_KEY")
 
-
-class GoogleTool:
-    """Google search tool using SerpAPI"""
-    _instance = None
-    _initialized = False
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            logger.info("Creating new GoogleTool instance")
-            cls._instance = super(GoogleTool, cls).__new__(cls)
-        return cls._instance
-    
-    def __init__(self):
-        self.name = "google"
-        self.description = "A search engine retrieving top search results as snippets from Google. Input should be a search query."
-    
-    def search(self, query: str, max_results: int = 3) -> Dict[str, Any]:
-        """Search Google for information"""
-        try:
-            api_key = getattr(config, "SERPAPI_API_KEY", None)
-            if not api_key:
-                return {
-                    "success": False,
-                    "error": "SerpAPI API key is missing in config.",
-                    "content": ""
-                }
-
-            search_url = "https://serpapi.com/search"
-            params = {
-                "q": query,
-                "api_key": api_key,
-                "engine": "google",
-                "num": max_results
+def seach_web(query:str,api_key:str, max_results=3) -> list:
+    params = {
+            "q": query,
+            "api_key": api_key,
+            "engine": "google",
+            "num": max_results
             }
 
-            with aiohttp.ClientSession() as session:
-                with session.get(search_url, params=params) as response:
-                    if response.status != 200:
-                        return {
-                            "success": False,
-                            "error": f"SerpAPI request failed with status {response.status}",
-                            "content": ""
-                        }
+    search = GoogleSearch(params)
+    results = search.get_dict()
 
-                    data =  response.json()
-                    organic_results = data.get("organic_results", [])[:max_results]
+    # Lấy các kết quả hữu cơ (organic results)
+    organic_results = results.get("organic_results", [])[:max_results]
 
-                    if not organic_results:
-                        return {
-                            "success": True,
-                            "content": f"No results found for Google query: '{query}'",
-                            "results": []
-                        }
+    # Lấy ra chỉ các liên kết (links) từ các kết quả
+    links = [result['link'] for result in organic_results]
 
-                    results = []
-                    content_parts = []
-                    for i, result in enumerate(organic_results, 1):
-                        title = result.get("title", "No title")
-                        link = result.get("link", "")
-                        snippet = result.get("snippet", "No snippet")
-
-                        results.append({
-                            "title": title,
-                            "url": link,
-                            "snippet": snippet
-                        })
-
-                        content_parts.append(
-                            f"Result {i}:\n"
-                            f"Title: {title}\n"
-                            f"URL: {link}\n"
-                            f"Snippet: {snippet}\n"
-                        )
-
-                    return {
-                        "success": True,
-                        "content": "\n".join(content_parts),
-                        "results": results
-                    }
-
-        except Exception as e:
-            logger.error(f"Google search error: {str(e)}")
-            return {
-                "success": False,
-                "error": f"Error during Google search: {str(e)}",
-                "content": f"Google search failed: {str(e)}"
-            }
+    return links

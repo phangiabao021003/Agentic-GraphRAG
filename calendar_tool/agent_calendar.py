@@ -64,7 +64,7 @@ class GoogleCalendar:
     def list_event(self, 
                     timeMin: Optional[str] = None,
                     timeMax: Optional[str] = None,
-                    json_input = None) -> List[dict]: 
+                    json_input: str= None) -> List[dict]: 
         try:
             if timeMin and timeMax:
                 # Nếu đã cung cấp timeMin và timeMax, sử dụng chúng (không chỉnh sửa gì thêm)
@@ -108,7 +108,7 @@ class GoogleCalendar:
                 return f"📅 There is no schedule from {time_min_str} to {time_max_str}.", False
             else:
                 output = f"📅 Schedule list from {time_min_str} to {time_max_str}:\n\n"
-                for event in events:
+                for idx, event in enumerate(events):
                     # Parse thời gian
                     start_dt = dateutil.parser.isoparse(event['start'].get('dateTime', event['start'].get('date')))
                     end_dt = dateutil.parser.isoparse(event['end'].get('dateTime', event['end'].get('date')))
@@ -122,10 +122,10 @@ class GoogleCalendar:
                     location = event.get('location', '')
                     
                     # Format output cho từng sự kiện
-                    output += f"### {summary}\n"
-                    output += f"⏰ Duration: {start_str} - {end_str}\n"
-                    if location != 'No location':
-                        output += f"📍 Location: {location}\n"
+                    output +=  f"Event {idx+1}:{summary}\n\n"
+                    output += f"Duration: {start_str} - {end_str}\n\n"
+                    if location != "":
+                        output += f"Location: {location}\n\n"
                     output += "---\n\n"
                 
                 return output, True

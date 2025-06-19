@@ -19,8 +19,9 @@ enhancing_prompt="""You are a helpful AI assistant that is very good in explaini
 you must give answer with detailed explanation based on the CONTEXT as possible.
 Give yourself room to think by extracting relevant passages from the context than use them to answer the query.
 Don't return the thinking, only return the answer.
-ONLY USING RELEVANT PASSAGES to answer the question.
-If no relevant information found from CONTEXT just reply with "The document does not contain the information mentioned in the question"
+USING RELEVANT PASSAGES to answer the question.
+If no relevant information found from CONTEXT or not provided CONTEXT just reply with "The document in database does not contain the information mentioned in the question."
+ONLY RETURN THE FINAL ANSWER
 ###
 QUERY: 
 {query}
@@ -42,8 +43,10 @@ QUERY:
 ###
 ANSWER:
 """
-
-
+web_search_prompt="""You are a helpful AI assistant that is very good in answering user query based on PROVIDED INFORMATION from the web.
+You must give answer with detailed explanation based on the PROVIDED INFORMATION as possible.
+If no information in the PROVIDED INFORMATION relates to the question, respond with "The document does not contain the information mentioned in the question".
+"""
 def schedule_prompt(user_query):
     """
     Generate an English prompt for Google Calendar Agent with:

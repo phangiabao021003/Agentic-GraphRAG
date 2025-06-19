@@ -5,9 +5,9 @@ import threading
 from typing import Optional
 import os
 import json
-from search_agent.react import ReActPipeline
+# from search_agent.react import ReActPipeline
 from agents.agent_router import router_query
-from graph.context_extractor import full_retriever
+from graph.context_extractor import full_retriever, chrome, web_searching
 from config import enhancing_prompt, llm_prompt, schedule_prompt, process_json_ouput
 from agents.agent_history import ContextAwareAgent
 from qdrant_client import QdrantClient
@@ -21,10 +21,12 @@ from google import genai
 from pdf_processing import process_pdf_to_documents, create_vectordb
 import time
 from queue import Queue
-import asyncio
+from search_agent.google import seach_web
+from search_agent.web_reader import read_web
 
 
 load_dotenv()
+api_key = os.getenv("SERPAPI_API_KEY")
 
 # Khởi tạo session state nếu chưa tồn tại
 if 'initialized' not in st.session_state:
@@ -68,15 +70,17 @@ def initialize_connections():
         st.session_state.initialized = True
 
         #Initialize RAGPipeline
-        st.session_state.react_pipeline = ReActPipeline(vector_store=st.session_state.vectordb,
-                                                        client=st.session_state.client)
+        # st.session_state.react_pipeline = ReActPipeline(vector_store=st.session_state.vectordb,
+        #                                                 client=st.session_state.client)
+        #Initialize web search
+        # st.session_state.driver = chrome()
 # Gọi hàm khởi tạo
 initialize_connections()
 
 # === Các hàm xử lý ===
 def stream(query: str, temperature: Optional[float] = 0.5):
     response = st.session_state.client.chat.completions.create(
-        model='llama3.2',
+        model='qwen2.5:3b',
         messages=[{"role": "user", "content": query}],
         max_tokens=2048,
         stream=True,
@@ -94,7 +98,7 @@ def stream(query: str, temperature: Optional[float] = 0.5):
 
 def ask(query: str, temperature: Optional[float] = 0.5):
     response = st.session_state.client.chat.completions.create(
-        model='llama3.2',
+        model='qwen2.5:3b',
         messages=[{"role": "user", "content": query}],
         max_tokens=2048,
         temperature=temperature,
@@ -112,18 +116,41 @@ def handle_llm(new_query):
 
 def handle_rag( new_query,selected_doc_ids: list =None):
     
-    # context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
-    # print("Context:",context)
-    # new_prompt = enhancing_prompt.format(query=new_query, context= context)
-    # return stream(new_prompt, 0.1)
-    output= st.session_state.react_pipeline.stream(
-        original_question=new_query,
-        messages=[{"role": "user", "content": new_query}],
-        top_k=5,
-        doc_ids=selected_doc_ids
-    )
-    print("\nOutput from ReAct Pipeline:", output)
+    output=""
+
+    context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
+    new_prompt_doc = enhancing_prompt.format(query=new_query, context= context)
+    document_answer= stream(new_prompt_doc,0.1)
+    
+    #seach website
+    links= seach_web(query=new_query, api_key=api_key, max_results=5)
+    web_content = ""
+    for link in links:
+        content = read_web(url=link)
+        
+        # Kiểm tra xem kết quả trả về có phải là một chuỗi hay không
+        if isinstance(content, str):  
+            web_content += content  
+        else:
+            # Nếu không phải chuỗi (chẳng hạn nếu là lỗi), xử lý lỗi ở đây
+            print(f"Error reading URL {link}: {content}")  # Hoặc bạn có thể ghi vào log hoặc thông báo lỗi
+    new_prompt_web= enhancing_prompt.format(query=new_query, context= web_content)
+    web_search_answer = stream(new_prompt_web,0.1)
+    link_output = "Relevant web search links:\n\n"
+    for idx,link in enumerate(links):
+        link_list = f"Source{idx+1}: {link}"
+        link_output += link_list + "\n\n"
+    output = "DOCUMENT_ANSWER:\n" + document_answer + "\n\n" + "WEB SEARCH ANSWER:\n" + web_search_answer + "\n\n" + link_output
     return output
+    
+    # return output
+    # output= st.session_state.react_pipeline.stream(
+    #     original_question=new_query,
+    #     messages=[{"role": "user", "content": new_query}],
+    #     top_k=5,
+    #     doc_ids=selected_doc_ids
+    # )
+    # return output
 
 def handle_calendar(new_query):
     new_prompt = schedule_prompt(new_query)
@@ -146,8 +173,7 @@ def handle_calendar(new_query):
         elif operation== "DELETE":
             output == st.session_state.calendar_agent.delete_event(json_input=event)
         elif operation == "READ":
-            output, has_events,event_ids = st.session_state.calendar_agent.list_event(json_input=event)
-            print("Event_ids:",event_ids)
+            output, has_events = st.session_state.calendar_agent.list_event(json_input=event)
     return output
 
 def embed_file(uploaded_file, existed_docs, qdrant_client, embeddings, sparse_embeddings):
@@ -354,6 +380,25 @@ user_query = st.chat_input("Typing question...")
 if user_query:
     with st.chat_message("user"):
         st.markdown(user_query)
+        thinking_placeholder = st.empty()  # Tạo placeholder cho "Thinking..."
+
+    thinking_html = """
+    <div class="thinking-blink" style="font-weight:bold; font-size: 1.1em;">
+      Thinking<span class="dot-1">.</span><span class="dot-2">.</span><span class="dot-3">.</span>
+    </div>
+    <style>
+    @keyframes blink {
+      0% { opacity: 0.2; }
+      50% { opacity: 1; }
+      100% { opacity: 0.2; }
+    }
+    .thinking-blink { animation: blink 1s infinite; }
+    .dot-1 { animation: none; }
+    .dot-2 { animation: none; }
+    .dot-3 { animation: none; }
+    </style>
+    """
+    thinking_placeholder.markdown(thinking_html, unsafe_allow_html=True)  # Hiển thị hiệu ứng động
 
     # Tạo câu hỏi mới dựa vào agent context-aware
     new_query = st.session_state.his_agent.generate_reply(user_query)
@@ -382,6 +427,8 @@ if user_query:
         else: 
             output = handle_calendar(new_query)
     st.session_state.his_agent.add_to_history("assistant", output)
+
+    thinking_placeholder.empty()  # Xóa/thay thế "Thinking..." sau khi có output
 
     # Hiển thị phản hồi
     with st.chat_message("assistant"):

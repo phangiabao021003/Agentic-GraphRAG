@@ -1,15 +1,13 @@
 from typing import Any, Dict, List, Optional
 from search_agent.doc_search import DocSearchTool
 from search_agent.wikipedia import WikipediaTool
-from search_agent.google import GoogleTool
 from langchain_qdrant import QdrantVectorStore
-
+from search_agent.google import seach_web
 class ToolRegistry:
     """Manages and orchestrates all available tools"""
 
     def __init__(self, vector_store: QdrantVectorStore):
         self.wikipedia = WikipediaTool()
-        self.google = GoogleTool()
         self.docsearch = DocSearchTool(vector_store=vector_store)
 
         # Tool definitions for LLM
@@ -60,8 +58,8 @@ class ToolRegistry:
         try:
             if action == "wikipedia":
                 result =  self.wikipedia.search(query=action_input)
-            elif action == "google":
-                result =  self.google.search(query=action_input)
+            # elif action == "google":
+            #     result =  seach_web(
             elif action == "docsearch":
                 result =  self.docsearch._run_tool(
                         original_question=docsearch_setting["original_question"],
@@ -74,4 +72,4 @@ class ToolRegistry:
             return result
                 
         except Exception as e:
-            return e
+            return "Error in tool registry:", e
