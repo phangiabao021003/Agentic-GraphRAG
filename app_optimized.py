@@ -40,7 +40,7 @@ def initialize_connections():
             base_url='http://localhost:11434/v1',
             api_key='dolphin-llama3'
         )
-        st.session_state.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+        st.session_state.embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
         st.session_state.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
         st.session_state.calendar_agent = GoogleCalendar()
         st.session_state.history_chat = []
@@ -50,7 +50,7 @@ def initialize_connections():
         st.session_state.qdrant = QdrantClient(host="localhost", port=6333)
         st.session_state.vectordb = QdrantVectorStore(
             client=st.session_state.qdrant,
-            collection_name="human-nutrition-text.pdf",
+            collection_name="human-nutrition.pdf",
             embedding=st.session_state.embeddings,
             sparse_embedding=st.session_state.sparse_embeddings,
             retrieval_mode=RetrievalMode.HYBRID,
@@ -86,15 +86,11 @@ def stream(query: str, temperature: Optional[float] = 0.5):
         stream=True,
         temperature=temperature,
     )
-    collected_message = ""
     for chunk in response:
         if chunk.choices and len(chunk.choices) > 0:
             content = chunk.choices[0].delta.content or ""
             if content:
-                print(content, end="", flush=True)
-                collected_message += content
-                time.sleep(0.01)
-    return collected_message
+                yield content
 
 def ask(query: str, temperature: Optional[float] = 0.5):
     response = st.session_state.client.chat.completions.create(
@@ -106,53 +102,49 @@ def ask(query: str, temperature: Optional[float] = 0.5):
     answer = response.choices[0].message.content
     return answer
 def handle_llm(new_query):
-    new_prompt = llm_prompt.format(query=new_query)
-    response = st.session_state.gemini.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=new_prompt,
-    )
-    answer = response.text
-    return answer
-
-def handle_rag( new_query,selected_doc_ids: list =None):
-    
-    output=""
-
-    context = full_retriever(st.session_state.graph, st.session_state.vectordb, new_query,selected_doc_ids)
-    new_prompt_doc = enhancing_prompt.format(query=new_query, context= context)
-    document_answer= stream(new_prompt_doc,0.1)
-    
-    #seach website
+    language = st.session_state.get('language', 'English')
     links= seach_web(query=new_query, api_key=api_key, max_results=5)
     web_content = ""
     for link in links:
         content = read_web(url=link)
-        
-        # Kiểm tra xem kết quả trả về có phải là một chuỗi hay không
         if isinstance(content, str):  
             web_content += content  
         else:
-            # Nếu không phải chuỗi (chẳng hạn nếu là lỗi), xử lý lỗi ở đây
-            print(f"Error reading URL {link}: {content}")  # Hoặc bạn có thể ghi vào log hoặc thông báo lỗi
-    new_prompt_web= enhancing_prompt.format(query=new_query, context= web_content)
-    web_search_answer = stream(new_prompt_web,0.1)
+            print(f"Error reading URL {link}: {content}")
+    new_prompt_web= enhancing_prompt.format(query=new_query, context= web_content, language=language)
+    new_prompt = llm_prompt.format(query=new_query, language=language)
+    response = st.session_state.gemini.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=new_prompt,
+    )
     link_output = "Relevant web search links:\n\n"
     for idx,link in enumerate(links):
         link_list = f"Source{idx+1}: {link}"
         link_output += link_list + "\n\n"
-    output = "DOCUMENT_ANSWER:\n" + document_answer + "\n\n" + "WEB SEARCH ANSWER:\n" + web_search_answer + "\n\n" + link_output
-    return output
-    
-    # return output
-    # output= st.session_state.react_pipeline.stream(
-    #     original_question=new_query,
-    #     messages=[{"role": "user", "content": new_query}],
-    #     top_k=5,
-    #     doc_ids=selected_doc_ids
-    # )
-    # return output
+    answer = response.text
+    return answer, new_prompt_web, link_output
+
+def handle_rag(new_query, selected_doc_ids: list = None):
+    language = st.session_state.get('language', 'English')
+    context = full_retriever(st.session_state.vectordb, new_query, selected_doc_ids)
+    new_prompt_doc = enhancing_prompt.format(query=new_query, context=context, language=language)
+    links = seach_web(query=new_query, api_key=api_key, max_results=5)
+    web_content = ""
+    for link in links:
+        content = read_web(url=link)
+        if isinstance(content, str):  
+            web_content += content  
+        else:
+            print(f"Error reading URL {link}: {content}")
+    new_prompt_web = enhancing_prompt.format(query=new_query, context=web_content, language=language)
+    link_output = "Relevant web search links:\n\n"
+    for idx, link in enumerate(links):
+        link_list = f"Source{idx+1}: {link}"
+        link_output += link_list + "\n\n"
+    return new_prompt_doc, new_prompt_web, link_output
 
 def handle_calendar(new_query):
+    language = st.session_state.get('language', 'English')
     new_prompt = schedule_prompt(new_query)
     response = st.session_state.gemini.models.generate_content(
         model="gemini-2.0-flash",
@@ -169,11 +161,23 @@ def handle_calendar(new_query):
         if operation == "CREATE":
             output = st.session_state.calendar_agent.insert_event(event)
         elif operation == "UPDATE":
-            output= st.session_state.calendar_agent.update_event(event)
-        elif operation== "DELETE":
-            output == st.session_state.calendar_agent.delete_event(json_input=event)
+            output = st.session_state.calendar_agent.update_event(event)
+        elif operation == "DELETE":
+            output = st.session_state.calendar_agent.delete_event(json_input=event)
         elif operation == "READ":
             output, has_events = st.session_state.calendar_agent.list_event(json_input=event)
+    # Nếu chọn tiếng Việt, dịch output sang tiếng Việt
+    if language == "Vietnamese" and output:
+        translate_prompt = f"Dịch sang tiếng Việt: {output}. Chỉ đưa ra kết quả dịch cuối cùng"
+        # Sử dụng Gemini để dịch
+        try:
+            translated = st.session_state.gemini.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=translate_prompt
+            )
+            output = translated.text
+        except Exception as e:
+            output = output + "\n(Lỗi khi dịch sang tiếng Việt)"
     return output
 
 def embed_file(uploaded_file, existed_docs, qdrant_client, embeddings, sparse_embeddings):
@@ -269,13 +273,29 @@ with st.sidebar:
     if st.button(" New Chat"):
         st.session_state.chat_history = []
         st.session_state.his_agent.delete_history
-    st.markdown("### 📚 Documents list existed in vector database:")
+    st.markdown("### 📚 Existed knowledge of nutrition virtual assistant")
     try:
-        existed_docs = get_all_doc_ids_from_collection(
-            qdrant_client=st.session_state.qdrant,
-            collection_name="human-nutrition-text.pdf",
-            limit=10
+        # Dropdown chọn ngôn ngữ
+        language = st.selectbox(
+            label="Select language / Chọn ngôn ngữ",
+            options=["English", "Vietnamese"],
+            index=0 if st.session_state.get('language', 'English') == 'English' else 1
         )
+        st.session_state['language'] = language
+        # Lấy existed_docs từ session_state nếu có, nếu không thì gọi hàm
+        existed_docs = st.session_state.get('existed_docs')
+        if existed_docs is None:
+            try:
+                existed_docs = get_all_doc_ids_from_collection(
+                    qdrant_client=st.session_state.qdrant,
+                    collection_name="human-nutrition.pdf",
+                    limit=10
+                )
+                st.session_state['existed_docs'] = existed_docs
+            except Exception as e:
+                st.error(f"Lỗi khi truy xuất tài liệu: {str(e)}")
+                existed_docs = []
+                st.session_state['existed_docs'] = []
         if existed_docs:
             selected_doc_ids = st.multiselect(
                 label="Select documents to answer",
@@ -304,6 +324,13 @@ with st.sidebar:
                 st.info(message)
             elif status_type == "success":
                 st.success(message)
+                # Lấy lại danh sách tài liệu mới nhất và lưu vào session_state
+                existed_docs = get_all_doc_ids_from_collection(
+                    qdrant_client=st.session_state.qdrant,
+                    collection_name="human-nutrition.pdf",
+                    limit=10
+                )
+                st.session_state['existed_docs'] = existed_docs
             elif status_type == "error":
                 st.error(message)
     except:
@@ -313,48 +340,60 @@ with st.sidebar:
         # Create a placeholder for status messages
         status_placeholder = st.empty()
         
-        # Tạo thread mới để xử lý file
-        thread = threading.Thread(
-            target=process_file_async,
-            args=(
-                uploaded_file, 
-                existed_docs, 
-                st.session_state.status_queue,
-                st.session_state.qdrant,
-                st.session_state.embeddings,
-                st.session_state.sparse_embeddings
-            ),
-            daemon=True  # Thêm daemon=True để thread tự động kết thúc khi chương trình chính kết thúc
-        )
-        thread.start()
-        
-        # Monitor the status queue and update the UI
-        while thread.is_alive():
-            try:
-                while not st.session_state.status_queue.empty():
-                    status_type, message = st.session_state.status_queue.get_nowait()
-                    print(f"Processing message: {status_type} - {message}")  # Debug print
-                    if status_type == "clear":
-                        status_placeholder.empty()
-                    elif status_type == "info" and message:  # Only show non-empty messages
-                        status_placeholder.info(message)
-                    elif status_type == "success":
-                        status_placeholder.success(message)
-                    elif status_type == "error":
-                        status_placeholder.error(message)
-            except Exception as e:
-                print(f"Error in status queue processing: {str(e)}")  # Debug print
-                pass
-            time.sleep(0.1)
-        
-        # Clear the status placeholder after processing
-        status_placeholder.empty()
+        # Tạo thread mới để xử lý file (chỉ tạo nếu chưa có thread đang chạy)
+        if 'ingest_thread' not in st.session_state or not st.session_state['ingest_thread'].is_alive():
+            thread = threading.Thread(
+                target=process_file_async,
+                args=(
+                    uploaded_file, 
+                    existed_docs, 
+                    st.session_state.status_queue,
+                    st.session_state.qdrant,
+                    st.session_state.embeddings,
+                    st.session_state.sparse_embeddings
+                ),
+                daemon=True
+            )
+            thread.start()
+            st.session_state['ingest_thread'] = thread
+
+        # Hiển thị status từ queue (nếu có)
+        import time as _time
+        show_success = False
+        success_time = None
+        try:
+            while not st.session_state.status_queue.empty():
+                status_type, message = st.session_state.status_queue.get_nowait()
+                if status_type == "clear":
+                    status_placeholder.empty()
+                elif status_type == "info" and message:
+                    status_placeholder.info(message)
+                elif status_type == "success":
+                    status_placeholder.success(message)
+                    show_success = True
+                    success_time = _time.time()
+                    # Lấy lại danh sách tài liệu mới nhất và lưu vào session_state
+                    existed_docs = get_all_doc_ids_from_collection(
+                        qdrant_client=st.session_state.qdrant,
+                        collection_name="human-nutrition.pdf",
+                        limit=10
+                    )
+                    st.session_state['existed_docs'] = existed_docs
+                elif status_type == "error":
+                    status_placeholder.error(message)
+        except:
+            pass
+
+        # Nếu vừa ingest xong, hiển thị success 5 giây rồi ẩn
+        if show_success and success_time:
+            if _time.time() - success_time > 5:
+                status_placeholder.empty()
 
     # Tùy chọn chọn route xử lý
     if existed_docs:  # Nếu có doc_ids, cho phép chọn "RAG"
-        route_options=["LLM (answer without retrieving documents)", "RAG (Augmented Generation with Retrieving documents)", "Calendar (Supporting manage personal schedule)"]
+        route_options=["Answer without using existed documents", "Answer using existed documents", "Supporting manage personal schedule"]
     else:
-        route_options = ["LLM (answer without retrieving documents)", "Calendar (Supporting manage personal schedule)"]
+        route_options = ["Answer without using existed documents", "Supporting manage personal schedule"]
     
     route_answer = st.radio(
         label="Select processing method",  # Thêm label
@@ -400,43 +439,108 @@ if user_query:
     """
     thinking_placeholder.markdown(thinking_html, unsafe_allow_html=True)  # Hiển thị hiệu ứng động
 
-    # Tạo câu hỏi mới dựa vào agent context-aware
     new_query = st.session_state.his_agent.generate_reply(user_query)
     st.session_state.his_agent.add_to_history("user", new_query)
-    print("\nNew-query:",new_query)
+    print("\nNew-query:", new_query)
     route_query = router_query(new_query)
     print("\nRoute query:", route_query)
-    if route_query== "chitchat":
-        output= "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
-    elif route_query == "nutrition": 
-        route_answer= route_answer
+    output = ""
+    if route_query == "chitchat":
+        output = "As an Nutrition Virtual Assistant, I can provide nutritional advice and personal schedule support. However, I cannot answer this question without retrieving relevant documents from the vector database. Please select the appropriate route for processing."
+        with st.chat_message("assistant"):
+            st.markdown(output)
+        st.session_state.his_agent.add_to_history("assistant", output)
+        st.session_state.chat_history.append({"role": "user", "content": user_query})
+        st.session_state.chat_history.append({"role": "assistant", "content": output})
+        thinking_placeholder.empty()
+    elif route_query == "nutrition":
+        route_answer = route_answer
         print("\nRoute answer:", route_answer)
-        if route_answer == "LLM (answer without retrieving documents)":
-            output = handle_llm(new_query)
-        elif route_answer == "RAG (Augmented Generation with Retrieving documents)":
-            selected_docs=st.session_state.get("selected_doc_ids", [])
-            output = handle_rag( new_query,selected_docs)
-        elif route_answer == "Calendar (Supporting manage personal schedule)":
+        if route_answer == "Answer without using existed documents":
+            answer, new_prompt_web, link_output = handle_llm(new_query)
+            with st.chat_message("assistant"):
+                assistant_placeholder = st.empty()
+                output = answer
+                assistant_placeholder.markdown(output)
+                output += "\n\nWEB SEARCH ANSWER:\n"
+                for chunk in stream(new_prompt_web, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\n" + link_output
+                assistant_placeholder.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
+        elif route_answer == "Answer using existed documents":
+            new_prompt_doc, new_prompt_web, link_output = handle_rag(new_query, st.session_state.get("selected_doc_ids", []))
+            with st.chat_message("assistant"):
+                assistant_placeholder = st.empty()
+                output = "DOCUMENT_ANSWER:\n"
+                for chunk in stream(new_prompt_doc, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\nWEB SEARCH ANSWER:\n"
+                for chunk in stream(new_prompt_web, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\n" + link_output
+                assistant_placeholder.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
+        elif route_answer == "Supporting manage personal schedule":
             output = "This query is related to nutrition. Please select the appropriate route for processing."
+            with st.chat_message("assistant"):
+                st.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
     else:
-        if route_answer== "LLM (answer without retrieving documents)":
-            output = handle_llm(new_query)
-        elif route_answer== "RAG (answer with retrieving documents from vectorDB)":
-            selected_docs=st.session_state.get("selected_doc_ids", [])
-            output = handle_rag( new_query,selected_docs)
-        else: 
+        if route_answer == "Answer without using existed documents":
+            answer, new_prompt_web, link_output = handle_llm(new_query)
+            with st.chat_message("assistant"):
+                assistant_placeholder = st.empty()
+                output = answer
+                assistant_placeholder.markdown(output)
+                output += "\n\nWEB SEARCH ANSWER:\n"
+                for chunk in stream(new_prompt_web, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\n" + link_output
+                assistant_placeholder.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
+        elif route_answer == "Answer using existed documents":
+            new_prompt_doc, new_prompt_web, link_output = handle_rag(new_query, st.session_state.get("selected_doc_ids", []))
+            with st.chat_message("assistant"):
+                assistant_placeholder = st.empty()
+                output = "DOCUMENT_ANSWER:\n"
+                for chunk in stream(new_prompt_doc, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\nWEB SEARCH ANSWER:\n"
+                for chunk in stream(new_prompt_web, 0.1):
+                    output += chunk
+                    assistant_placeholder.markdown(output)
+                output += "\n\n" + link_output
+                assistant_placeholder.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
+        else:
             output = handle_calendar(new_query)
-    st.session_state.his_agent.add_to_history("assistant", output)
-
-    thinking_placeholder.empty()  # Xóa/thay thế "Thinking..." sau khi có output
-
-    # Hiển thị phản hồi
-    with st.chat_message("assistant"):
-        st.markdown(output)
-
-    # Lưu vào session_state để hiển thị lại sau
-    st.session_state.chat_history.append({"role": "user", "content": user_query})
-    st.session_state.chat_history.append({"role": "assistant", "content": output})
+            with st.chat_message("assistant"):
+                st.markdown(output)
+            st.session_state.his_agent.add_to_history("assistant", output)
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.session_state.chat_history.append({"role": "assistant", "content": output})
+            thinking_placeholder.empty()
 
 # Hiển thị lịch sử chat
 if st.session_state.history_chat:

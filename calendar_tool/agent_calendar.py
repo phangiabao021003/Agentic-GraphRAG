@@ -142,10 +142,43 @@ class GoogleCalendar:
         
         # Get recurrence rule if exists
         recurrence = json_input['parameters'].get('recurrence', [])
-        if recurrence:
+        if recurrence and len(recurrence) > 0:
             # Parse RRULE to get days of week
-            rrule = recurrence[0].split(':')[1]
-            days = rrule.split(';')[1].split('=')[1].split(',')
+            try:
+                rrule = recurrence[0].split(':')[1]
+            except (IndexError, AttributeError) as e:
+                print(f"Error parsing recurrence rule '{recurrence[0]}': {e}")
+                # Fallback to non-recurring event
+                note, existed_event = self.list_event(json_input=json_input)
+                if existed_event==True:
+                    return f"⚠️ Schedule conflict found:\n{note}"
+                else:
+                    try:
+                        event = self.service.events().insert(calendarId=self.calendar_id, body=event).execute()
+                        return f"✅ Event created: {event.get('htmlLink')}"
+                    except HttpError as e:
+                        print(f"Error inserting event: {e}")
+                        return None
+            
+            # Safely parse RRULE to get days
+            days = []
+            try:
+                rrule_parts = rrule.split(';')
+                for part in rrule_parts:
+                    if part.startswith('BYDAY='):
+                        days = part.split('=')[1].split(',')
+                        break
+                
+                # If no BYDAY found, use default (current day of week)
+                if not days:
+                    start_dt = dateutil.parser.isoparse(timeMin)
+                    days = [start_dt.strftime('%a').upper()[:2]]
+                    
+            except (IndexError, AttributeError) as e:
+                print(f"Error parsing RRULE '{rrule}': {e}")
+                # Fallback to current day of week
+                start_dt = dateutil.parser.isoparse(timeMin)
+                days = [start_dt.strftime('%a').upper()[:2]]
             
             # Convert days to datetime objects
             start_dt = dateutil.parser.isoparse(timeMin)

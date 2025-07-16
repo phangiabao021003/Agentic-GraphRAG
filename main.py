@@ -35,7 +35,7 @@ his_agent=ContextAwareAgent(client=client,max_context_tokens=4000)
 vectordb =  QdrantClient(host="localhost", port=6333)
 qdrant = QdrantVectorStore(
     client=vectordb,
-    collection_name="human-nutrition-text.pdf",
+    collection_name="human-nutrition.pdf",
     embedding=embeddings,
     sparse_embedding=sparse_embeddings,
     retrieval_mode=RetrievalMode.HYBRID,

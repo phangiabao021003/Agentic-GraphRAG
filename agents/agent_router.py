@@ -14,7 +14,7 @@ def router_query(input: str) -> str:
         "http://localhost:11434/v1/chat/completions",
         headers={"Content-Type": "application/json"},
         json={
-            "model": "llama3.1",
+            "model": "llama3.2",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
         }

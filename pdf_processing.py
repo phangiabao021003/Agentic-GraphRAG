@@ -131,16 +131,16 @@ def create_vectordb(client:QdrantClient,
     if collection_name:
         collections = client.get_collections().collections
         collection_names = [c.name for c in collections]
-        if "human-nutrition-text.pdf" not in collection_names:
+        if "human-nutrition.pdf" not in collection_names:
             client.create_collection(
-            collection_name="human-nutrition-text.pdf",
-            vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
+            collection_name="human-nutrition.pdf",
+            vectors_config={"dense": VectorParams(size=1024, distance=Distance.COSINE)},
             sparse_vectors_config={
                 "sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))
             },
         )
     else:
-        collection_name = "human-nutrition-text.pdf"
+        collection_name = "human-nutrition.pdf"
 
     doc_id = next(iter(set(doc.metadata["doc_id"] for doc in documents)))
 
@@ -162,23 +162,23 @@ def create_vectordb(client:QdrantClient,
         qdrant.add_documents(documents=documents, ids=uuids)
 
 # Tạo embedding model từ Hugging Face
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-client = QdrantClient(host="localhost", port=6333)
-sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-collections = client.get_collections().collections
-collection_names = [c.name for c in collections]
-if "human-nutrition-text.pdf" not in collection_names:
-            client.create_collection( collection_name="human-nutrition-text.pdf",
-                                      vectors_config={"dense": VectorParams(size=768, distance=Distance.COSINE)},
-                                      sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))})
-existed_docs = get_all_doc_ids_from_collection(
-            qdrant_client=QdrantClient(host="localhost", port=6333),
-            collection_name="human-nutrition-text.pdf",
-            limit=10
-        )
-project_root = Path(__file__).resolve().parent
-pdf_path = project_root / "human-nutrition-text.pdf"
-documents = process_pdf_to_documents(str(pdf_path))
-collection_name = pdf_path.name
+# embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
+# client = QdrantClient(host="localhost", port=6333)
+# sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+# collections = client.get_collections().collections
+# collection_names = [c.name for c in collections]
+# if "human-nutrition.pdf" not in collection_names:
+#             client.create_collection( collection_name="human-nutrition.pdf",
+#                                       vectors_config={"dense": VectorParams(size=1024, distance=Distance.COSINE)},
+#                                       sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))})
+# existed_docs = get_all_doc_ids_from_collection(
+#             qdrant_client=QdrantClient(host="localhost", port=6333),
+#             collection_name="human-nutrition.pdf",
+#             limit=10
+#         )
+# project_root = Path(__file__).resolve().parent
+# pdf_path = project_root / "human-nutrition-text.pdf"
+# documents = process_pdf_to_documents(str(pdf_path))
+# collection_name = pdf_path.name
 
-create_vectordb(client=client, collection_name=None, documents=documents, existed_docs=existed_docs, embeddings=embeddings, sparse_embeddings=sparse_embeddings)
+# create_vectordb(client=client, collection_name=None, documents=documents, existed_docs=existed_docs, embeddings=embeddings, sparse_embeddings=sparse_embeddings)

@@ -22,6 +22,7 @@ Don't return the thinking, only return the answer.
 USING RELEVANT PASSAGES to answer the question.
 If no relevant information found from CONTEXT or not provided CONTEXT just reply with "The document in database does not contain the information mentioned in the question."
 ONLY RETURN THE FINAL ANSWER
+THE FINAL ANSWER must be in {language}.
 ###
 QUERY: 
 {query}
@@ -37,6 +38,7 @@ llm_prompt="""You are a helpful AI assistant that is very good in explaining and
 you must give answer with detailed explanation with bullets, heading , subheading etc. based on the CONTEXT.
 always rename the title ,headings, subheading in your answer but keep the meaning same.
 make sure your answers are as explanatory as possible.
+The answer must be in {language}.
 ###
 QUERY: 
 {query}
