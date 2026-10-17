@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
-from app.tools.rag import FALLBACK_MESSAGE, search
+from mcp_server.tools.rag import FALLBACK_MESSAGE, search
 
 
 class FakeDoc:

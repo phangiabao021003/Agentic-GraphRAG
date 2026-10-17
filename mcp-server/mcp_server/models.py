@@ -6,7 +6,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams, models
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from app.config import settings
+from mcp_server.config import settings
 
 logger = logging.getLogger(__name__)
 

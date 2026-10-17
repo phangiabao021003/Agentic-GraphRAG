@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from uuid import uuid4
 
-from app.models import COLLECTION_NAME, qdrant_client, vectordb
-from app.utils import process_pdf_to_documents
+from mcp_server.models import COLLECTION_NAME, qdrant_client, vectordb
+from mcp_server.utils import process_pdf_to_documents
 
 logger = logging.getLogger(__name__)
 

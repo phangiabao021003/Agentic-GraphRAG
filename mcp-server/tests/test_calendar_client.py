@@ -1,6 +1,6 @@
 import logging
 
-from app.tools.calendar import (
+from mcp_server.tools.calendar import (
     DEFAULT_TZ_NAME,
     build_calendar_service,
     create_event,
@@ -173,7 +173,7 @@ def test_build_calendar_service_constructs_with_access_token(monkeypatch):
         captured.update(name=service_name, version=version, token=credentials.token)
         return "fake-service"
 
-    monkeypatch.setattr("app.tools.calendar.build", fake_build)
+    monkeypatch.setattr("mcp_server.tools.calendar.build", fake_build)
 
     assert build_calendar_service("tok123") == "fake-service"
     assert captured == {"name": "calendar", "version": "v3", "token": "tok123"}

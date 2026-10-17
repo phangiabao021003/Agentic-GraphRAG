@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.utils import process_pdf_to_documents
+from mcp_server.utils import process_pdf_to_documents
 
 FIXTURE_PDF = Path(__file__).resolve().parent / "fixtures" / "sample.pdf"
 

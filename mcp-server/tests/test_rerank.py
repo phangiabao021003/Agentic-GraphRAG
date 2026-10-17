@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
-from app.utils import rerank
+from mcp_server.utils import rerank
 
 
 class FakeDoc:

@@ -3,18 +3,18 @@ from typing import Literal
 import anyio
 from mcp.server.fastmcp import FastMCP
 
-from app.tools.calendar import (
+from mcp_server.tools.calendar import (
     build_calendar_service,
     create_event,
     delete_event,
     read_events,
     update_event,
 )
-from app.config import settings
-from app.models import reranker_model, reranker_tokenizer, vectordb
-from app.tools.rag import search
-from app.tools.context import MISSING_TOKEN_MESSAGE, extract_access_token
-from app.tools.web_search import web_search as _web_search
+from mcp_server.config import settings
+from mcp_server.models import reranker_model, reranker_tokenizer, vectordb
+from mcp_server.tools.rag import search
+from mcp_server.tools.context import MISSING_TOKEN_MESSAGE, extract_access_token
+from mcp_server.tools.web_search import web_search as _web_search
 
 mcp = FastMCP("nutrition-va-mcp")
 

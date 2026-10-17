@@ -2,7 +2,7 @@ import logging
 
 from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
-from app.utils import rerank
+from mcp_server.utils import rerank
 
 logger = logging.getLogger(__name__)
 

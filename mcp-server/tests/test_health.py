@@ -1,6 +1,6 @@
 import logging
 
-from app.utils import check_qdrant
+from mcp_server.utils import check_qdrant
 
 
 class FakeQdrantOk:
