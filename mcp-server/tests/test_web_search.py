@@ -1,6 +1,6 @@
 import logging
 
-from app.tools.web_search import FALLBACK_MESSAGE, web_search
+from mcp_server.tools.web_search import FALLBACK_MESSAGE, web_search
 
 
 class FakeResponse:
@@ -19,7 +19,7 @@ class FakeResponse:
 
 def test_web_search_returns_fallback_when_no_organic_results(monkeypatch):
     monkeypatch.setattr(
-        "app.tools.web_search.requests.get",
+        "mcp_server.tools.web_search.requests.get",
         lambda url, params=None, timeout=None: FakeResponse(json_data={"organic_results": []}),
     )
     assert web_search("query", "fake-key") == FALLBACK_MESSAGE
@@ -31,7 +31,7 @@ def test_web_search_returns_page_text_on_success(monkeypatch):
             return FakeResponse(json_data={"organic_results": [{"link": "https://example.com"}]})
         return FakeResponse(content=b"<html><body>Hello world</body></html>")
 
-    monkeypatch.setattr("app.tools.web_search.requests.get", fake_get)
+    monkeypatch.setattr("mcp_server.tools.web_search.requests.get", fake_get)
     result = web_search("query", "fake-key", max_results=1)
 
     assert "Hello world" in result
@@ -42,7 +42,7 @@ def test_web_search_returns_fallback_when_serpapi_fails(monkeypatch):
     def fake_get(url, params=None, timeout=None):
         raise ConnectionError("serpapi down")
 
-    monkeypatch.setattr("app.tools.web_search.requests.get", fake_get)
+    monkeypatch.setattr("mcp_server.tools.web_search.requests.get", fake_get)
     assert web_search("query", "fake-key") == FALLBACK_MESSAGE
 
 
@@ -55,7 +55,7 @@ def test_web_search_skips_unreadable_pages_but_returns_others(monkeypatch):
             raise ConnectionError("page down")
         return FakeResponse(content=b"<html><body>Good content</body></html>")
 
-    monkeypatch.setattr("app.tools.web_search.requests.get", fake_get)
+    monkeypatch.setattr("mcp_server.tools.web_search.requests.get", fake_get)
     result = web_search("query", "fake-key", max_results=2)
 
     assert "Good content" in result
@@ -68,7 +68,7 @@ def test_web_search_returns_fallback_when_every_page_fails(monkeypatch):
             return FakeResponse(json_data={"organic_results": [{"link": "https://bad.com"}]})
         raise ConnectionError("page down")
 
-    monkeypatch.setattr("app.tools.web_search.requests.get", fake_get)
+    monkeypatch.setattr("mcp_server.tools.web_search.requests.get", fake_get)
     assert web_search("query", "fake-key") == FALLBACK_MESSAGE
 
 
@@ -76,7 +76,7 @@ def test_web_search_logs_exception_on_search_failure(caplog, monkeypatch):
     def fake_get(url, params=None, timeout=None):
         raise ConnectionError("boom")
 
-    monkeypatch.setattr("app.tools.web_search.requests.get", fake_get)
+    monkeypatch.setattr("mcp_server.tools.web_search.requests.get", fake_get)
     with caplog.at_level(logging.ERROR):
         result = web_search("query", "fake-key")
 
