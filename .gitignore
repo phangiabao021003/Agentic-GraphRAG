@@ -1,29 +1,26 @@
-# Bỏ qua thư mục Qdrant local
-vectordb/
+# env / secrets
+.env
+.env/
 
-# Bỏ qua file cache Python
+# python
+.venv/
+/env/
 __pycache__/
 *.pyc
 *.pyo
-
-# Bỏ qua môi trường ảo
-/env/
-.env/
-
-# Bỏ qua file log
-*.log
-
-# Bỏ qua notebook checkpoint
+.pytest_cache/
 .ipynb_checkpoints/
 
-# VS Code settings
+# node
+node_modules/
+dist/
+
+# misc
+.hf-cache/
+*.log
 .vscode/
 
-# biến môi trường .env
-.env
-#credentials.json
-credentials.json
-
-*.pickle
-
-qdrant_storage
+# local-only project docs and memory (deliberately untracked)
+docs
+.claude
+CLAUDE.md
