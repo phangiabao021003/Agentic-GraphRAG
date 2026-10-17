@@ -6,11 +6,18 @@ import type { ChatRequest, SSEEvent } from "./types";
  * Pure parser: consumes a text buffer, returns completed events and the
  * unconsumed tail. Frames are separated by a blank line; lines are
  * `event: <name>` / `data: <json>`; `:`-prefixed lines are comments (pings).
+ *
+ * Line endings may be CRLF, LF or CR (SSE spec). sse-starlette >= 3 sends CRLF,
+ * so splitting on "\n\n" alone never finds a frame. A trailing lone CR is held
+ * back in `rest`: it may be the first half of a CRLF split across chunks.
  */
 export function parseSSEChunk(buffer: string): { events: SSEEvent[]; rest: string } {
   const events: SSEEvent[] = [];
-  const parts = buffer.split("\n\n");
-  const rest = parts.pop() ?? ""; // last piece is incomplete (or empty)
+  const trailingCR = buffer.endsWith("\r");
+  const normalized = (trailingCR ? buffer.slice(0, -1) : buffer).replace(/\r\n?/g, "\n");
+  const parts = normalized.split("\n\n");
+  // last piece is incomplete (or empty)
+  const rest = (parts.pop() ?? "") + (trailingCR ? "\r" : "");
 
   for (const frame of parts) {
     let eventName = "";

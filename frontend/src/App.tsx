@@ -5,7 +5,7 @@ import { AuthPage } from "./pages/AuthPage";
 import { ChatPage } from "./pages/ChatPage";
 
 function App() {
-  const { user, login, register, logout } = useAuth();
+  const { user, login, register, logout, googleError } = useAuth();
 
   if (user === undefined) {
     return (
@@ -18,7 +18,7 @@ function App() {
   return (
     <ToastProvider>
       {user === null ? (
-        <AuthPage onLogin={login} onRegister={register} />
+        <AuthPage onLogin={login} onRegister={register} googleError={googleError} />
       ) : (
         <ChatPage user={user} onLogout={logout} />
       )}

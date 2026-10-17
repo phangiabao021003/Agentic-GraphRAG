@@ -132,3 +132,27 @@ async def test_every_helper_degrades_when_redis_is_down():
     await delete_session(broken, "h")
     assert await get_google_token(broken, "u") is None
     await set_google_token(broken, "u", "t")
+
+
+async def test_login_code_is_single_use():
+    import redis.asyncio as aioredis
+    from app.config import settings
+    from app.cache.sessions import LOGIN_CODE_TTL, pop_login_code, store_login_code
+
+    r = aioredis.from_url(settings.redis_url)
+    try:
+        code = f"test-{uuid.uuid4()}"
+        assert await store_login_code(r, code, {"access_token": "a", "refresh_token": "b"}) is True
+        assert 0 < await r.ttl(f"google_login:{code}") <= LOGIN_CODE_TTL
+        assert await pop_login_code(r, code) == {"access_token": "a", "refresh_token": "b"}
+        assert await pop_login_code(r, code) is None
+    finally:
+        await r.aclose()
+
+
+async def test_login_code_helpers_degrade_when_redis_is_down():
+    from app.cache.sessions import pop_login_code, store_login_code
+
+    broken = BrokenRedis()
+    assert await store_login_code(broken, "c", {"access_token": "a", "refresh_token": "b"}) is False
+    assert await pop_login_code(broken, "c") is None

@@ -43,4 +43,34 @@ describe("parseSSEChunk", () => {
     const { events } = parseSSEChunk(`: ping${SEP}event: answer${NL}data: {"num": 1}${SEP}`);
     expect(events).toEqual([{ event: "answer", data: { num: 1 } }]);
   });
+
+  // sse-starlette >= 3 terminates lines with CRLF; the SSE spec allows CRLF, LF or CR.
+  const CRLF = "\r\n";
+
+  it("parses CRLF-terminated frames (sse-starlette default)", () => {
+    const { events, rest } = parseSSEChunk(
+      `event: conversation${CRLF}data: {"conversation_id": "c1"}${CRLF}${CRLF}` +
+      `event: answer${CRLF}data: {"content": "Xin chào!"}${CRLF}${CRLF}`
+    );
+    expect(events).toEqual([
+      { event: "conversation", data: { conversation_id: "c1" } },
+      { event: "answer", data: { content: "Xin chào!" } },
+    ]);
+    expect(rest).toBe("");
+  });
+
+  it("parses a CRLF frame whose chunk boundary splits CR from LF", () => {
+    const first = parseSSEChunk(`event: answer${CRLF}data: {"content": "hi"}${CRLF}\r`);
+    expect(first.events).toEqual([]);
+    const second = parseSSEChunk(first.rest + "\n");
+    expect(second.events).toEqual([{ event: "answer", data: { content: "hi" } }]);
+    expect(second.rest).toBe("");
+  });
+
+  it("does not create a spurious frame when a chunk ends with a lone CR", () => {
+    const first = parseSSEChunk("event: answer\r");
+    const second = parseSSEChunk(first.rest + `\ndata: {"n": 1}${CRLF}${CRLF}`);
+    expect([...first.events, ...second.events]).toEqual([{ event: "answer", data: { n: 1 } }]);
+  });
 });
+

@@ -83,3 +83,23 @@ async def get_google_credentials(pool: asyncpg.Pool, user_id) -> Optional[dict]:
         user_id,
     )
     return dict(row) if row else None
+
+
+async def get_user_by_google_sub(pool: asyncpg.Pool, sub: str) -> Optional[dict]:
+    row = await pool.fetchrow(
+        "SELECT id, email, created_at FROM users WHERE google_sub = $1", sub
+    )
+    return dict(row) if row else None
+
+
+async def set_google_sub(pool: asyncpg.Pool, user_id, sub: str) -> None:
+    await pool.execute("UPDATE users SET google_sub = $2 WHERE id = $1", user_id, sub)
+
+
+async def create_google_user(pool: asyncpg.Pool, email: str, sub: str) -> dict:
+    row = await pool.fetchrow(
+        "INSERT INTO users (email, google_sub) VALUES ($1, $2) RETURNING id, email, created_at",
+        email,
+        sub,
+    )
+    return dict(row)
