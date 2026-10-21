@@ -1,10 +1,19 @@
-from datetime import datetime, timezone
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
-from app.cache.sessions import delete_session, get_session, set_session
+from app.cache.sessions import (
+    delete_session,
+    get_session,
+    pop_login_code,
+    set_session,
+    store_login_code,
+)
 from app.db.users import (
     create_user,
     get_google_credentials,
@@ -15,9 +24,17 @@ from app.db.users import (
     upsert_google_credentials,
 )
 from app.auth.dependencies import get_current_user
-from app.auth.google_oauth import build_flow, create_state, verify_state
+from app.auth.google_login import find_or_create_google_user
+from app.auth.google_oauth import (
+    LOGIN_SCOPES,
+    build_flow,
+    create_state,
+    verify_google_id_token,
+    verify_state,
+)
 from app.config import settings
 from app.models.auth import (
+    GoogleExchangeRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -32,6 +49,8 @@ from app.auth.security import (
     refresh_token_expiry,
     verify_password,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
@@ -106,7 +125,7 @@ async def logout(body: RefreshRequest, request: Request):
 @router.get("/auth/google/connect")
 async def google_connect(user: dict = Depends(get_current_user)):
     flow = build_flow()
-    state = create_state(str(user["id"]))
+    state = create_state("connect", str(user["id"]))
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
@@ -117,28 +136,87 @@ async def google_connect(user: dict = Depends(get_current_user)):
     return {"url": authorization_url}
 
 
-@router.get("/auth/google/callback")
-async def google_callback(code: str, state: str, request: Request):
-    try:
-        user_id = verify_state(state)
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
+def _frontend(query: str) -> RedirectResponse:
+    return RedirectResponse(f"{settings.frontend_url.rstrip('/')}/?{query}")
 
-    flow = build_flow()
-    flow.fetch_token(code=code)
-    credentials = flow.credentials
-    expiry = credentials.expiry
+
+async def _store_google_credentials(pool, user_id, credentials) -> None:
+    expiry = credentials.expiry or (datetime.now(timezone.utc) + timedelta(hours=1))
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
-
     await upsert_google_credentials(
-        request.app.state.pg_pool,
-        user_id,
-        encrypt_token(credentials.refresh_token),
-        encrypt_token(credentials.token),
-        expiry,
+        pool, user_id, encrypt_token(credentials.refresh_token), encrypt_token(credentials.token), expiry
     )
-    return RedirectResponse(f"{settings.frontend_url}?google=connected")
+
+
+@router.get("/auth/google/login")
+async def google_login():
+    flow = build_flow(LOGIN_SCOPES)
+    authorization_url, _ = flow.authorization_url(
+        access_type="offline", prompt="select_account", state=create_state("login")
+    )
+    return RedirectResponse(authorization_url)
+
+
+@router.get("/auth/google/callback")
+async def google_callback(request: Request, state: str, code: str | None = None, error: str | None = None):
+    try:
+        payload = verify_state(state)
+    except jwt.PyJWTError:
+        logger.warning("Google callback with invalid or expired state")
+        return _frontend("google_error=invalid_state")
+    if payload["purpose"] == "login":
+        return await _complete_google_login(request, code, error)
+    return await _complete_google_connect(request, payload["user_id"], code, error)
+
+
+async def _complete_google_connect(request: Request, user_id: str, code: str | None, error: str | None):
+    if error or not code:
+        logger.warning("Google connect returned error=%s", error)
+        return _frontend("google=error")
+    flow = build_flow()
+    await run_in_threadpool(flow.fetch_token, code=code)
+    await _store_google_credentials(request.app.state.pg_pool, user_id, flow.credentials)
+    return _frontend("google=connected")
+
+
+async def _complete_google_login(request: Request, code: str | None, error: str | None):
+    if error or not code:
+        logger.warning("Google sign-in returned error=%s", error)
+        return _frontend("google_error=denied")
+    try:
+        flow = build_flow(LOGIN_SCOPES)
+        await run_in_threadpool(flow.fetch_token, code=code)
+        credentials = flow.credentials
+        claims = await run_in_threadpool(verify_google_id_token, credentials.id_token)
+    except Exception:
+        logger.exception("Google sign-in token exchange / ID-token verification failed")
+        return _frontend("google_error=failed")
+    if not claims.get("email_verified"):
+        logger.warning("Google sign-in rejected: unverified email %s", claims.get("email"))
+        return _frontend("google_error=unverified_email")
+    try:
+        pool = request.app.state.pg_pool
+        user = await find_or_create_google_user(pool, claims["sub"], claims["email"])
+        if credentials.refresh_token:  # only on first grant; keep existing creds otherwise
+            await _store_google_credentials(pool, user["id"], credentials)
+        tokens = await _issue_tokens(request, user["id"])
+        login_code = secrets.token_urlsafe(32)
+        stored = await store_login_code(request.app.state.redis_client, login_code, tokens.model_dump())
+    except Exception:
+        logger.exception("Google sign-in failed while creating the session")
+        return _frontend("google_error=failed")
+    if not stored:
+        return _frontend("google_error=failed")
+    return _frontend(f"google_login={login_code}")
+
+
+@router.post("/auth/google/exchange", response_model=TokenResponse)
+async def google_exchange(body: GoogleExchangeRequest, request: Request):
+    tokens = await pop_login_code(request.app.state.redis_client, body.code)
+    if tokens is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired login code")
+    return TokenResponse(**tokens)
 
 
 @router.get("/auth/google/status")

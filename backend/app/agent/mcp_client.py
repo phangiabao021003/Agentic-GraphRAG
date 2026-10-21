@@ -1,8 +1,10 @@
 import logging
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from app.agent.errors import MCPToolError
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -10,6 +12,8 @@ logger = logging.getLogger(__name__)
 GOOGLE_TOKEN_HEADER = "X-Google-Access-Token"
 
 _catalog: list[dict] | None = None
+
+_CONNECTION_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, OSError)
 
 
 def extract_text_result(result) -> str:
@@ -19,6 +23,18 @@ def extract_text_result(result) -> str:
 
 def _mcp_url() -> str:
     return settings.mcp_server_url.rstrip("/") + "/mcp"
+
+
+def _classify(exc: BaseException) -> str:
+    """Map a failure to an error code. The MCP client runs inside an anyio task group,
+    so connection errors usually arrive wrapped in an ExceptionGroup."""
+    if isinstance(exc, BaseExceptionGroup):
+        if any(_classify(sub) == "mcp_unreachable" for sub in exc.exceptions):
+            return "mcp_unreachable"
+        return "tool_failed"
+    if isinstance(exc, _CONNECTION_ERRORS):
+        return "mcp_unreachable"
+    return "tool_failed"
 
 
 async def fetch_tool_catalog() -> list[dict]:
@@ -44,6 +60,7 @@ async def fetch_tool_catalog() -> list[dict]:
 
 
 async def call_mcp_tool(name: str, args: dict, google_access_token: str | None = None) -> str:
+    """Call one MCP tool. Raises MCPToolError (code mcp_unreachable | tool_failed)."""
     headers = {GOOGLE_TOKEN_HEADER: google_access_token} if google_access_token else None
     try:
         async with streamablehttp_client(_mcp_url(), headers=headers) as (read, write, _):
@@ -51,6 +68,6 @@ async def call_mcp_tool(name: str, args: dict, google_access_token: str | None =
                 await session.initialize()
                 result = await session.call_tool(name, args)
         return extract_text_result(result)
-    except Exception:
+    except Exception as exc:
         logger.exception("MCP tool call failed: %s(%s)", name, args)
-        return f"❌ Không thể gọi công cụ {name}: lỗi kết nối tới mcp-server."
+        raise MCPToolError(_classify(exc), name) from exc

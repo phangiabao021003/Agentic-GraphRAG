@@ -39,6 +39,14 @@ export type SSEEvent = {
   data: any;
 };
 
+// `event: error` data from POST /chat (backend app/agent/errors.py)
+export type ErrorEvent = {
+  code: string;
+  message: string;
+  tool: string | null;
+  severity: "error" | "warning";
+};
+
 export type DocumentList = {
   doc_ids: string[];
 };

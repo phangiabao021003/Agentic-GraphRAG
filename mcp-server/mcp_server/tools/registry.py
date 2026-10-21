@@ -2,6 +2,7 @@ from typing import Literal
 
 import anyio
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from mcp_server.tools.calendar import (
     build_calendar_service,
@@ -16,7 +17,11 @@ from mcp_server.tools.rag import search
 from mcp_server.tools.context import MISSING_TOKEN_MESSAGE, extract_access_token
 from mcp_server.tools.web_search import web_search as _web_search
 
-mcp = FastMCP("nutrition-va-mcp")
+
+mcp = FastMCP(
+    "nutrition-va-mcp",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 
 def _access_token() -> str | None:

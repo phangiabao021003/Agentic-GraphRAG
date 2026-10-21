@@ -81,3 +81,77 @@ describe("apiJson auth handling", () => {
     expect(refreshCalls).toBe(1);
   });
 });
+
+describe("apiJson error notification", () => {
+  beforeEach(() => {
+    setTokens("old-access", "old-refresh");
+  });
+
+  afterEach(() => {
+    clearTokens();
+    vi.restoreAllMocks();
+  });
+
+  function listen() {
+    const received: Array<{ status: number; message: string }> = [];
+    const handler = (e: Event) => received.push((e as CustomEvent).detail);
+    window.addEventListener("api-error", handler);
+    return { received, stop: () => window.removeEventListener("api-error", handler) };
+  }
+
+  it("dispatches api-error with the backend detail on a 502", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ detail: "mcp-server không phản hồi" }, 502)));
+    const { received, stop } = listen();
+
+    await expect(apiJson("/documents")).rejects.toThrow("mcp-server không phản hồi");
+
+    stop();
+    expect(received).toEqual([{ status: 502, message: "mcp-server không phản hồi" }]);
+  });
+
+  it("falls back to a generic message when the body has no detail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 500 })));
+    const { received, stop } = listen();
+
+    await expect(apiJson("/x")).rejects.toThrow();
+
+    stop();
+    expect(received).toEqual([{ status: 500, message: "Lỗi máy chủ (HTTP 500)" }]);
+  });
+
+  it("does not dispatch api-error for 401 (auth-expired handles it)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(jsonResponse({ detail: "expired" }, 401))
+        .mockResolvedValueOnce(jsonResponse({ detail: "Invalid refresh token" }, 401)),
+    );
+    const { received, stop } = listen();
+
+    await expect(apiJson("/me")).rejects.toThrow();
+
+    stop();
+    expect(received).toEqual([]);
+  });
+
+  it("dispatches status 0 when fetch itself fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const { received, stop } = listen();
+
+    await expect(apiJson("/me")).rejects.toThrow("Không kết nối được tới máy chủ");
+
+    stop();
+    expect(received).toEqual([{ status: 0, message: "Không kết nối được tới máy chủ" }]);
+  });
+
+  it("notify: false suppresses the event but still throws", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ detail: "Email already registered" }, 409)));
+    const { received, stop } = listen();
+
+    await expect(apiJson("/auth/register", { method: "POST" }, { notify: false }))
+      .rejects.toThrow("Email already registered");
+
+    stop();
+    expect(received).toEqual([]);
+  });
+});

@@ -1,16 +1,23 @@
 // SSE over fetch (EventSource cannot POST). Pure logic — no React imports.
-import { API_URL, getAccessToken, refreshTokens, ApiError } from "./client";
+import { API_URL, getAccessToken, refreshTokens, ApiError, errorDetail, notifyApiError, NETWORK_ERROR_MESSAGE } from "./client";
 import type { ChatRequest, SSEEvent } from "./types";
 
 /**
  * Pure parser: consumes a text buffer, returns completed events and the
  * unconsumed tail. Frames are separated by a blank line; lines are
  * `event: <name>` / `data: <json>`; `:`-prefixed lines are comments (pings).
+ *
+ * Line endings may be CRLF, LF or CR (SSE spec). sse-starlette >= 3 sends CRLF,
+ * so splitting on "\n\n" alone never finds a frame. A trailing lone CR is held
+ * back in `rest`: it may be the first half of a CRLF split across chunks.
  */
 export function parseSSEChunk(buffer: string): { events: SSEEvent[]; rest: string } {
   const events: SSEEvent[] = [];
-  const parts = buffer.split("\n\n");
-  const rest = parts.pop() ?? ""; // last piece is incomplete (or empty)
+  const trailingCR = buffer.endsWith("\r");
+  const normalized = (trailingCR ? buffer.slice(0, -1) : buffer).replace(/\r\n?/g, "\n");
+  const parts = normalized.split("\n\n");
+  // last piece is incomplete (or empty)
+  const rest = (parts.pop() ?? "") + (trailingCR ? "\r" : "");
 
   for (const frame of parts) {
     let eventName = "";
@@ -46,12 +53,20 @@ export async function* streamChat(body: ChatRequest): AsyncGenerator<SSEEvent> {
       body: JSON.stringify(body),
     });
 
-  let resp = await call();
-  if (resp.status === 401 && (await refreshTokens())) {
+  let resp: Response;
+  try {
     resp = await call();
+    if (resp.status === 401 && (await refreshTokens())) {
+      resp = await call();
+    }
+  } catch {
+    notifyApiError(0, NETWORK_ERROR_MESSAGE);
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   }
   if (!resp.ok || !resp.body) {
-    throw new ApiError(resp.status, `Chat request failed (HTTP ${resp.status})`);
+    const detail = resp.ok ? `Chat request failed (HTTP ${resp.status})` : await errorDetail(resp);
+    if (resp.status !== 401) notifyApiError(resp.status, detail);
+    throw new ApiError(resp.status, detail);
   }
 
   const reader = resp.body.getReader();
@@ -67,6 +82,10 @@ export async function* streamChat(body: ChatRequest): AsyncGenerator<SSEEvent> {
       buffer = rest;
       for (const event of events) yield event;
     }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    notifyApiError(0, NETWORK_ERROR_MESSAGE);
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   } finally {
     reader.releaseLock();
   }

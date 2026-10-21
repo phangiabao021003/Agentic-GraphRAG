@@ -1,16 +1,20 @@
-from contextlib import asynccontextmanager
+from app.logging_config import configure_logging
 
-import asyncpg
-import redis.asyncio as redis
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+configure_logging()  # before the app imports so import-time errors are formatted too
 
-from app.auth.routes import router as auth_router
-from app.api.chat import router as chat_router
-from app.api.conversations import router as conversation_router
-from app.api.documents import router as document_router
-from app.config import settings
-from app.health import check_postgres, check_redis
+from contextlib import asynccontextmanager  # noqa: E402
+
+import asyncpg  # noqa: E402
+import redis.asyncio as redis  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from app.auth.routes import router as auth_router  # noqa: E402
+from app.api.chat import router as chat_router  # noqa: E402
+from app.api.conversations import router as conversation_router  # noqa: E402
+from app.api.documents import router as document_router  # noqa: E402
+from app.config import settings  # noqa: E402
+from app.health import check_postgres, check_redis  # noqa: E402
 
 
 @asynccontextmanager

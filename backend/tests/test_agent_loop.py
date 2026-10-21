@@ -2,6 +2,7 @@ import pytest
 
 import app.agent.loop as loop_mod
 from app.agent import run_agent
+from app.agent.errors import MCPToolError
 
 CATALOG = [
     {"name": "rag_search", "description": "d", "schema": {"properties": {"query": {"type": "string"}}}},
@@ -123,3 +124,114 @@ async def test_answer_event_is_always_last_and_unique(wire):
     events = await collect(run_agent([], "q"))
     assert [e["type"] for e in events].count("answer") == 1
     assert events[-1]["type"] == "answer"
+
+
+async def test_llm_failure_emits_error_event_before_apology(wire, monkeypatch):
+    wire([])
+
+    class Boom:
+        async def complete(self, messages):
+            raise loop_mod.LLMProviderError("down")
+    monkeypatch.setattr(loop_mod, "get_provider", lambda: Boom())
+
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events] == ["rewrite", "error", "answer"]
+    assert events[1]["code"] == "llm_unavailable"
+    assert events[1]["severity"] == "error"
+    assert events[1]["message"] == "Mô hình ngôn ngữ không phản hồi. Vui lòng thử lại."
+    assert events[-1]["content"] == loop_mod.APOLOGY
+
+
+async def test_llm_failure_on_retry_emits_error_event(wire, monkeypatch):
+    provider, _ = wire(["garbage"])
+
+    async def complete(messages):
+        if provider.responses:
+            return provider.responses.pop(0)
+        raise loop_mod.LLMProviderError("down on retry")
+    monkeypatch.setattr(provider, "complete", complete)
+
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events] == ["rewrite", "error", "answer"]
+    assert events[1]["code"] == "llm_unavailable"
+
+
+async def test_twice_unparseable_emits_warning_and_raw_text(wire):
+    wire(["garbage one", "garbage two"])
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events] == ["rewrite", "error", "answer"]
+    assert events[1]["code"] == "llm_bad_output"
+    assert events[1]["severity"] == "warning"
+    assert events[-1]["content"] == "garbage two"
+
+
+async def test_tool_failure_emits_error_then_result_and_continues(wire, monkeypatch):
+    provider, _ = wire(['{"tool": "rag_search", "args": {"query": "x"}}', '{"answer": "ok"}'])
+
+    async def failing_call(name, args, google_access_token=None):
+        raise MCPToolError("tool_failed", name)
+    monkeypatch.setattr(loop_mod, "call_mcp_tool", failing_call)
+
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events] == ["rewrite", "tool_call", "error", "tool_result", "answer"]
+    assert events[2]["code"] == "tool_failed"
+    assert events[2]["tool"] == "rag_search"
+    assert events[2]["message"] == "Công cụ rag_search gặp lỗi, kết quả có thể thiếu."
+    assert "không khả dụng" in events[3]["result"]
+    # the planner still sees the failure note in its next prompt
+    assert "không khả dụng" in provider.calls[1][-1]["content"]
+
+
+async def test_tool_connection_failure_is_mcp_unreachable(wire, monkeypatch):
+    wire(['{"tool": "rag_search", "args": {"query": "x"}}', '{"answer": "ok"}'])
+
+    async def failing_call(name, args, google_access_token=None):
+        raise MCPToolError("mcp_unreachable", name)
+    monkeypatch.setattr(loop_mod, "call_mcp_tool", failing_call)
+
+    events = await collect(run_agent([], "q"))
+    errors = [e for e in events if e["type"] == "error"]
+    assert len(errors) == 1 and errors[0]["code"] == "mcp_unreachable"
+
+
+async def test_empty_catalog_emits_mcp_unreachable_first(wire, monkeypatch):
+    wire(['{"answer": "no tools"}'])
+
+    async def empty_catalog():
+        return []
+    monkeypatch.setattr(loop_mod, "fetch_tool_catalog", empty_catalog)
+
+    events = await collect(run_agent([], "q"))
+    assert events[0] == {
+        "type": "error", "code": "mcp_unreachable", "tool": None, "severity": "error",
+        "message": "Không kết nối được tới máy chủ công cụ. Trợ lý sẽ trả lời không dùng công cụ.",
+    }
+    assert [e["type"] for e in events].count("answer") == 1
+    assert events[-1]["type"] == "answer"
+
+
+async def test_loop_crash_emits_agent_crashed_then_apology(wire, monkeypatch):
+    wire([])
+
+    class Broken:
+        async def complete(self, messages):
+            raise RuntimeError("unexpected")  # not an LLMProviderError → escapes the node
+    monkeypatch.setattr(loop_mod, "get_provider", lambda: Broken())
+
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events][-2:] == ["error", "answer"]
+    assert events[-2]["code"] == "agent_crashed"
+    assert events[-1]["content"] == loop_mod.APOLOGY
+
+
+async def test_provider_error_before_loop_emits_agent_crashed_then_apology(wire, monkeypatch):
+    wire([])
+
+    def bad_provider():
+        raise loop_mod.LLMProviderError("bad provider")
+    monkeypatch.setattr(loop_mod, "get_provider", bad_provider)
+
+    events = await collect(run_agent([], "q"))
+    assert [e["type"] for e in events][-2:] == ["error", "answer"]
+    assert events[-2]["code"] == "agent_crashed"
+    assert events[-1]["content"] == loop_mod.APOLOGY

@@ -1,12 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiJson, clearTokens, getRefreshToken, hasTokens, setTokens } from "../api/client";
+import { exchangeGoogleCode, readGoogleRedirect } from "../api/googleLogin";
 import type { TokenPair, User } from "../api/types";
 
 /** user === undefined -> checking stored token; null -> logged out. */
 export function useAuth() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Google sign-in lands on ?google_login=<one-time code> or ?google_error=<reason>.
+    const redirect = readGoogleRedirect(window.location.search);
+    if (redirect) {
+      // Drop the one-time code from the address bar and history right away.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    if (redirect && "code" in redirect) {
+      exchangeGoogleCode(redirect.code)
+        .then(() => apiJson<User>("/me"))
+        .then(setUser)
+        .catch(() => {
+          setGoogleError("failed");
+          setUser(null);
+        });
+      return;
+    }
+    if (redirect && "error" in redirect) setGoogleError(redirect.error);
     if (!hasTokens()) {
       setUser(null);
       return;
@@ -26,7 +45,7 @@ export function useAuth() {
     const pair = await apiJson<TokenPair>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    });
+    }, { notify: false });
     setTokens(pair.access_token, pair.refresh_token);
     setUser(await apiJson<User>("/me"));
   }, []);
@@ -35,7 +54,7 @@ export function useAuth() {
     const pair = await apiJson<TokenPair>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    });
+    }, { notify: false });
     setTokens(pair.access_token, pair.refresh_token);
     setUser(await apiJson<User>("/me"));
   }, []);
@@ -47,11 +66,11 @@ export function useAuth() {
       apiJson("/auth/logout", {
         method: "POST",
         body: JSON.stringify({ refresh_token: refreshToken }),
-      }).catch(() => {});
+      }, { notify: false }).catch(() => {});
     }
     clearTokens();
     setUser(null);
   }, []);
 
-  return { user, login, register, logout };
+  return { user, login, register, logout, googleError };
 }

@@ -24,3 +24,6 @@ dist/
 docs
 .claude
 CLAUDE.md
+# Google OAuth client files downloaded from Cloud Console
+client_secret*.json
+credentials.json

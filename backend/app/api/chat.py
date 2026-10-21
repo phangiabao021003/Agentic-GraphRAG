@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent import run_agent
+from app.agent.errors import error_event
 from app.models.chat import ChatRequest
 from app.cache.conversations import (
     append_messages,
@@ -92,6 +93,8 @@ async def chat(body: ChatRequest, request: Request, user: dict = Depends(get_cur
         except Exception:
             # run_agent is not supposed to raise (#5 guarantees it); belt and braces.
             logger.exception("chat stream crashed for conversation %s", conversation_id)
+            crashed = error_event("agent_crashed")
+            yield _sse("error", {k: v for k, v in crashed.items() if k != "type"})
             answer = answer or "❌ Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
             yield _sse("answer", {"content": answer})
 

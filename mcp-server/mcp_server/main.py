@@ -1,30 +1,34 @@
-import tempfile
-from contextlib import asynccontextmanager
-from pathlib import Path
+from mcp_server.logging_config import configure_logging
 
-from fastapi import FastAPI, UploadFile
+configure_logging()  # before models/registry import: model loading happens at import time
 
-from mcp_server.utils import check_qdrant
-from mcp_server.ingest import get_all_doc_ids, ingest_pdf
-from mcp_server.tools.registry import mcp
-from mcp_server.models import qdrant_client
+import tempfile  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-mcp = mcp.streamable_http_mcp()
+from fastapi import FastAPI, UploadFile  # noqa: E402
+
+from mcp_server.utils import check_qdrant  # noqa: E402
+from mcp_server.ingest import get_all_doc_ids, ingest_pdf  # noqa: E402
+from mcp_server.tools.registry import mcp  # noqa: E402
+from mcp_server.models import qdrant_client  # noqa: E402
+
+mcp_app = mcp.streamable_http_app()
 
 
 @asynccontextmanager
-async def lifespan(mcp: FastAPI):
-    # FastAPI does not run a mounted sub-mcp's lifespan; without this the MCP
+async def lifespan(app: FastAPI):
+    # FastAPI does not run a mounted sub-app's lifespan; without this the MCP
     # session manager never starts and every MCP request dies with
     # "Session terminated".
     async with mcp.session_manager.run():
         yield
 
 
-mcp = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan)
 
 
-@mcp.get("/health")
+@app.get("/health")
 def health():
     qdrant_ok = check_qdrant(qdrant_client)
     return {
@@ -34,7 +38,7 @@ def health():
     }
 
 
-@mcp.post("/internal/ingest")
+@app.post("/internal/ingest")
 async def internal_ingest(file: UploadFile):
     tmp_path = Path(tempfile.gettempdir()) / file.filename
     contents = await file.read()
@@ -46,13 +50,13 @@ async def internal_ingest(file: UploadFile):
     return result
 
 
-@mcp.get("/internal/documents")
+@app.get("/internal/documents")
 def internal_documents():
     return {"doc_ids": get_all_doc_ids()}
 
 
-# Mounted last so the explicit routes above win. The sub-mcp serves the MCP
+# Mounted last so the explicit routes above win. The sub-app serves the MCP
 # endpoint at its own internal "/mcp" path — mounting it at "/mcp" would
 # double the path to /mcp/mcp (a 404 that hid until the first real MCP client
 # connected in sub-project #5).
-mcp.mount("/", mcp)
+app.mount("/", mcp_app)
