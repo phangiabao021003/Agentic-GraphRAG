@@ -1,5 +1,5 @@
 // SSE over fetch (EventSource cannot POST). Pure logic — no React imports.
-import { API_URL, getAccessToken, refreshTokens, ApiError } from "./client";
+import { API_URL, getAccessToken, refreshTokens, ApiError, errorDetail, notifyApiError, NETWORK_ERROR_MESSAGE } from "./client";
 import type { ChatRequest, SSEEvent } from "./types";
 
 /**
@@ -53,12 +53,20 @@ export async function* streamChat(body: ChatRequest): AsyncGenerator<SSEEvent> {
       body: JSON.stringify(body),
     });
 
-  let resp = await call();
-  if (resp.status === 401 && (await refreshTokens())) {
+  let resp: Response;
+  try {
     resp = await call();
+    if (resp.status === 401 && (await refreshTokens())) {
+      resp = await call();
+    }
+  } catch {
+    notifyApiError(0, NETWORK_ERROR_MESSAGE);
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   }
   if (!resp.ok || !resp.body) {
-    throw new ApiError(resp.status, `Chat request failed (HTTP ${resp.status})`);
+    const detail = resp.ok ? `Chat request failed (HTTP ${resp.status})` : await errorDetail(resp);
+    if (resp.status !== 401) notifyApiError(resp.status, detail);
+    throw new ApiError(resp.status, detail);
   }
 
   const reader = resp.body.getReader();
@@ -74,6 +82,10 @@ export async function* streamChat(body: ChatRequest): AsyncGenerator<SSEEvent> {
       buffer = rest;
       for (const event of events) yield event;
     }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    notifyApiError(0, NETWORK_ERROR_MESSAGE);
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   } finally {
     reader.releaseLock();
   }

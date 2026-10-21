@@ -45,7 +45,7 @@ export function useAuth() {
     const pair = await apiJson<TokenPair>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    });
+    }, { notify: false });
     setTokens(pair.access_token, pair.refresh_token);
     setUser(await apiJson<User>("/me"));
   }, []);
@@ -54,7 +54,7 @@ export function useAuth() {
     const pair = await apiJson<TokenPair>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    });
+    }, { notify: false });
     setTokens(pair.access_token, pair.refresh_token);
     setUser(await apiJson<User>("/me"));
   }, []);
@@ -66,7 +66,7 @@ export function useAuth() {
       apiJson("/auth/logout", {
         method: "POST",
         body: JSON.stringify({ refresh_token: refreshToken }),
-      }).catch(() => {});
+      }, { notify: false }).catch(() => {});
     }
     clearTokens();
     setUser(null);

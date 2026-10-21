@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { parseSSEChunk } from "./sse";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, clearTokens, setTokens } from "./client";
+import { parseSSEChunk, streamChat } from "./sse";
 
 const NL = "\n";
 const SEP = "\n\n";
@@ -72,5 +73,54 @@ describe("parseSSEChunk", () => {
     const second = parseSSEChunk(first.rest + `\ndata: {"n": 1}${CRLF}${CRLF}`);
     expect([...first.events, ...second.events]).toEqual([{ event: "answer", data: { n: 1 } }]);
   });
+
+  it("parses an error frame", () => {
+    const { events } = parseSSEChunk(
+      `event: error${CRLF}data: {"code": "tool_failed", "message": "Công cụ web_search gặp lỗi, kết quả có thể thiếu.", "tool": "web_search", "severity": "error"}${CRLF}${CRLF}`
+    );
+    expect(events).toEqual([
+      {
+        event: "error",
+        data: { code: "tool_failed", message: "Công cụ web_search gặp lỗi, kết quả có thể thiếu.", tool: "web_search", severity: "error" },
+      },
+    ]);
+  });
 });
 
+describe("streamChat", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    clearTokens();
+  });
+
+  it("reports a mid-stream read failure as a network ApiError and api-error event", async () => {
+    setTokens("a", "r");
+    const frame = new TextEncoder().encode("event: answer\ndata: {\"content\":\"hi\"}\n\n");
+    let sent = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!sent) {
+          sent = true;
+          controller.enqueue(frame);
+        } else {
+          controller.error(new TypeError("network"));
+        }
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 200 })));
+    const seen: any[] = [];
+    const listener = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener("api-error", listener);
+    try {
+      const gen = streamChat({ message: "q" } as any);
+      const first = await gen.next();
+      expect(first.value).toEqual({ event: "answer", data: { content: "hi" } });
+      const err = await gen.next().catch((e) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(0);
+      expect(seen).toEqual([{ status: 0, message: "Không kết nối được tới máy chủ" }]);
+    } finally {
+      window.removeEventListener("api-error", listener);
+    }
+  });
+});

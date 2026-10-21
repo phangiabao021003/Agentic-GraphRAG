@@ -14,6 +14,26 @@ export class ApiError extends Error {
   }
 }
 
+export const NETWORK_ERROR_MESSAGE = "Không kết nối được tới máy chủ";
+
+export type ApiJsonOptions = { notify?: boolean };
+
+/** Tell the UI (ToastProvider listens on window) that a request failed. */
+export function notifyApiError(status: number, message: string): void {
+  window.dispatchEvent(new CustomEvent("api-error", { detail: { status, message } }));
+}
+
+/** Backend error bodies are `{"detail": "..."}` (FastAPI); fall back to a generic line. */
+export async function errorDetail(resp: Response): Promise<string> {
+  try {
+    const body = await resp.json();
+    if (body?.detail) return String(body.detail);
+  } catch {
+    /* non-JSON error body */
+  }
+  return `Lỗi máy chủ (HTTP ${resp.status})`;
+}
+
 export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_KEY);
 }
@@ -96,23 +116,30 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
   return resp;
 }
 
-export async function apiJson<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiJson<T = any>(
+  path: string,
+  init: RequestInit = {},
+  opts: ApiJsonOptions = {},
+): Promise<T> {
+  const notify = opts.notify ?? true;
   const hasBody = init.body !== undefined && !(init.body instanceof FormData);
-  const resp = await apiFetch(path, {
-    ...init,
-    headers: {
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers as Record<string, string> | undefined),
-    },
-  });
+  let resp: Response;
+  try {
+    resp = await apiFetch(path, {
+      ...init,
+      headers: {
+        ...(hasBody ? { "Content-Type": "application/json" } : {}),
+        ...(init.headers as Record<string, string> | undefined),
+      },
+    });
+  } catch {
+    if (notify) notifyApiError(0, NETWORK_ERROR_MESSAGE);
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
+  }
   if (!resp.ok) {
-    let detail = `HTTP ${resp.status}`;
-    try {
-      const body = await resp.json();
-      if (body?.detail) detail = String(body.detail);
-    } catch {
-      /* non-JSON error body */
-    }
+    const detail = await errorDetail(resp);
+    // 401 is handled by apiFetch (refresh + auth-expired); never toast it.
+    if (notify && resp.status !== 401) notifyApiError(resp.status, detail);
     throw new ApiError(resp.status, detail);
   }
   if (resp.status === 204) return undefined as T;

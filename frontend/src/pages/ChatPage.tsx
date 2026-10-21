@@ -34,19 +34,21 @@ export function ChatPage({ user, onLogout }: Props) {
     }
   }, [toast]);
 
+  // HTTP failures are toasted by ToastProvider via the api-error channel (api/client.ts),
+  // so the catch blocks below only stop unhandled rejections.
   const selectConversation = useCallback(
     (id: string | null) => {
       setActiveId(id);
-      loadConversation(id).catch(() => toast("Không tải được lịch sử hội thoại", "error"));
+      loadConversation(id).catch(() => {});
     },
-    [loadConversation, toast],
+    [loadConversation],
   );
 
   const handleSend = useCallback(
     (text: string) => {
-      send(activeId, text, [...selected]).catch(() => toast("Gửi tin nhắn thất bại — thử lại nhé", "error"));
+      send(activeId, text, [...selected]).catch(() => {});
     },
-    [send, activeId, selected, toast],
+    [send, activeId, selected],
   );
 
   const handleDelete = useCallback(
@@ -55,10 +57,10 @@ export function ChatPage({ user, onLogout }: Props) {
         await remove(id);
         if (id === activeId) selectConversation(null);
       } catch {
-        toast("Xóa hội thoại thất bại", "error");
+        /* reported via api-error */
       }
     },
-    [remove, activeId, selectConversation, toast],
+    [remove, activeId, selectConversation],
   );
 
   const handleUpload = useCallback(
@@ -71,7 +73,7 @@ export function ChatPage({ user, onLogout }: Props) {
         const result = await upload(file);
         toast(result.message, result.status === "success" ? "success" : "info");
       } catch {
-        toast("Tải tài liệu thất bại", "error");
+        /* reported via api-error */
       }
     },
     [upload, toast],

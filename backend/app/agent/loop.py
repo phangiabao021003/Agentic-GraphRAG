@@ -3,6 +3,7 @@ from typing import AsyncIterator, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.agent.errors import MCPToolError, error_event
 from app.agent.mcp_client import call_mcp_tool, fetch_tool_catalog
 from app.agent.parser import ParseError, parse_planner_output
 from app.agent.prompts import planner_user_message, rewrite_messages, system_prompt
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 MAX_ITERATIONS = 5
 MAX_HISTORY = 10
 APOLOGY = "❌ Xin lỗi, hệ thống đang gặp sự cố khi xử lý câu hỏi của bạn. Vui lòng thử lại sau."
+TOOL_FAILURE_NOTE = "❌ Công cụ {tool} không khả dụng."
 
 
 class AgentState(TypedDict, total=False):
@@ -25,6 +27,7 @@ class AgentState(TypedDict, total=False):
     answer: str | None
     doc_ids: list[str] | None
     google_access_token: str | None
+    error: dict | None  # one error_event() per node update; run_agent forwards it
 
 
 def _build_graph(provider, catalog):
@@ -56,7 +59,8 @@ def _build_graph(provider, catalog):
             text = await provider.complete(messages)
         except LLMProviderError:
             logger.exception("planner LLM call failed")
-            return {"answer": APOLOGY, "pending_tool": None, "iterations": iterations}
+            return {"answer": APOLOGY, "pending_tool": None, "iterations": iterations,
+                    "error": error_event("llm_unavailable")}
 
         try:
             kind, value = parse_planner_output(text, known)
@@ -72,10 +76,12 @@ def _build_graph(provider, catalog):
                 kind, value = parse_planner_output(text2, known)
             except LLMProviderError:
                 logger.exception("planner retry LLM call failed")
-                return {"answer": APOLOGY, "pending_tool": None, "iterations": iterations}
+                return {"answer": APOLOGY, "pending_tool": None, "iterations": iterations,
+                        "error": error_event("llm_unavailable")}
             except ParseError:
                 logger.warning("planner output unparseable twice; degrading to raw text")
-                return {"answer": text2, "pending_tool": None, "iterations": iterations}
+                return {"answer": text2, "pending_tool": None, "iterations": iterations,
+                        "error": error_event("llm_bad_output")}
 
         if kind == "tool" and not force:
             return {"pending_tool": value, "answer": None, "iterations": iterations}
@@ -89,9 +95,19 @@ def _build_graph(provider, catalog):
         args = dict(call["args"])
         if call["tool"] == "rag_search" and state.get("doc_ids"):
             args["doc_ids"] = state["doc_ids"]
-        result = await call_mcp_tool(call["tool"], args, state.get("google_access_token"))
+        error = None
+        try:
+            result = await call_mcp_tool(call["tool"], args, state.get("google_access_token"))
+        except MCPToolError as exc:
+            # Keep a short note in the tool result so the planner knows the tool failed.
+            result = TOOL_FAILURE_NOTE.format(tool=exc.tool)
+            error = error_event(exc.code, tool=exc.tool)
         record = {"tool": call["tool"], "args": args, "result": result}
-        return {"tool_results": state.get("tool_results", []) + [record], "pending_tool": None}
+        delta: dict = {"tool_results": state.get("tool_results", []) + [record],
+                       "pending_tool": None}
+        if error:
+            delta["error"] = error
+        return delta
 
     graph = StateGraph(AgentState)
     graph.add_node("rewrite", rewrite)
@@ -116,20 +132,25 @@ async def run_agent(
     doc_ids: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     catalog = await fetch_tool_catalog()
-    provider = get_provider()
-    app = _build_graph(provider, catalog)
-    state: AgentState = {
-        "history": history[-MAX_HISTORY:],
-        "query": query,
-        "tool_results": [],
-        "iterations": 0,
-        "doc_ids": doc_ids,
-        "google_access_token": google_access_token,
-    }
+    if not catalog:
+        # mcp-server was unreachable at turn start; the planner runs without tools.
+        yield error_event("mcp_unreachable")
     answer = APOLOGY
     try:
+        provider = get_provider()
+        app = _build_graph(provider, catalog)
+        state: AgentState = {
+            "history": history[-MAX_HISTORY:],
+            "query": query,
+            "tool_results": [],
+            "iterations": 0,
+            "doc_ids": doc_ids,
+            "google_access_token": google_access_token,
+        }
         async for update in app.astream(state, stream_mode="updates"):
             for node, delta in update.items():
+                if delta.get("error"):
+                    yield delta["error"]
                 if node == "rewrite":
                     yield {"type": "rewrite", "standalone_query": delta["standalone_query"]}
                 elif node == "planner" and delta.get("pending_tool"):
@@ -142,4 +163,5 @@ async def run_agent(
                     yield {"type": "tool_result", "tool": record["tool"], "result": record["result"]}
     except Exception:
         logger.exception("agent loop crashed")
+        yield error_event("agent_crashed")
     yield {"type": "answer", "content": answer}

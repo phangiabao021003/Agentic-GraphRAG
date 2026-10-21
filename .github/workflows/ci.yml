@@ -1,0 +1,50 @@
+# Bài 1 — workflow CI đầu tiên: chạy unit test của mcp-server.
+# GitHub đọc mọi file .yml trong .github/workflows/ và tự chạy chúng.
+
+# Tên hiển thị ở tab "Actions" trên GitHub.
+name: CI
+
+# KHI NÀO chạy (trigger). push: mỗi lần push lên bất kỳ nhánh nào.
+# pull_request: mỗi lần mở/cập nhật một pull request.
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+
+# Mỗi job chạy trên một máy ảo (runner) MỚI TINH, độc lập với nhau.
+jobs:
+  mcp-server:
+    # Hệ điều hành của runner. Docker image của bạn cũng là Linux nên test sát môi trường thật.
+    runs-on: ubuntu-latest
+
+    # Mọi lệnh `run:` bên dưới chạy trong thư mục mcp-server/ (giống `cd mcp-server`).
+    defaults:
+      run:
+        working-directory: mcp-server
+
+    # Các bước chạy TUẦN TỰ. Một bước lỗi (exit code khác 0) thì job dừng và báo đỏ.
+    steps:
+      # `uses:` = dùng một action có sẵn. checkout tải code của commit vừa push về runner.
+      # Thiếu bước này, runner là máy trống, không có file nào của bạn.
+      - name: loadcode
+        uses: actions/checkout@v4
+
+      # Cài uv và Python 3.11 (khớp mcp-server/Dockerfile: FROM python:3.11-slim).
+      - name: install_uv_and_python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      # `run:` = lệnh shell bạn tự viết.
+      # --frozen: cài ĐÚNG phiên bản trong uv.lock, và báo lỗi nếu lock lệch với pyproject.toml.
+      # Lưu ý: lock đang chứa torch bản CUDA cho Linux, bước này tải vài GB nên sẽ chậm.
+      # Đó là chủ đề của bài 5 (cache).
+      - name: install_dependency
+        run: uv sync --frozen
+
+      # Nhóm dev (pytest) được cài mặc định. Test mcp-server không load model ML
+      # và không cần Qdrant, nên chạy được trên runner trống.
+      - name: run_test
+        run: uv run pytest -q

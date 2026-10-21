@@ -1,13 +1,17 @@
-import tempfile
-from contextlib import asynccontextmanager
-from pathlib import Path
+from mcp_server.logging_config import configure_logging
 
-from fastapi import FastAPI, UploadFile
+configure_logging()  # before models/registry import: model loading happens at import time
 
-from mcp_server.utils import check_qdrant
-from mcp_server.ingest import get_all_doc_ids, ingest_pdf
-from mcp_server.tools.registry import mcp
-from mcp_server.models import qdrant_client
+import tempfile  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from fastapi import FastAPI, UploadFile  # noqa: E402
+
+from mcp_server.utils import check_qdrant  # noqa: E402
+from mcp_server.ingest import get_all_doc_ids, ingest_pdf  # noqa: E402
+from mcp_server.tools.registry import mcp  # noqa: E402
+from mcp_server.models import qdrant_client  # noqa: E402
 
 mcp_app = mcp.streamable_http_app()
 

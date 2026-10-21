@@ -146,3 +146,53 @@ def test_doc_ids_forwarded_to_agent(monkeypatch):
         client.post("/chat", json={"message": "hỏi", "doc_ids": ["doc1.pdf"]},
                     headers={"Authorization": f"Bearer {token}"})
     assert calls[0]["doc_ids"] == ["doc1.pdf"]
+
+
+ERROR_EVENTS = [
+    {"type": "rewrite", "standalone_query": "q?"},
+    {"type": "tool_call", "tool": "web_search", "args": {"query": "q?"}},
+    {"type": "error", "code": "tool_failed", "message": "Công cụ web_search gặp lỗi, kết quả có thể thiếu.",
+     "tool": "web_search", "severity": "error"},
+    {"type": "tool_result", "tool": "web_search", "result": "❌ Công cụ web_search không khả dụng."},
+    {"type": "answer", "content": "trả lời không có web"},
+]
+
+
+def test_error_events_are_forwarded_and_not_persisted_in_trace(monkeypatch):
+    monkeypatch.setattr(chat_mod, "run_agent", _fake_agent(ERROR_EVENTS))
+    with TestClient(app) as client:
+        token = _register(client)
+        resp = client.post("/chat", json={"message": "hỏi"},
+                           headers={"Authorization": f"Bearer {token}"})
+
+    events = _parse_sse(resp.text)
+    names = [e["event"] for e in events]
+    assert names == ["conversation", "rewrite", "tool_call", "error", "tool_result", "answer"]
+    err = next(e for e in events if e["event"] == "error")
+    assert err["data"] == {"code": "tool_failed", "tool": "web_search", "severity": "error",
+                           "message": "Công cụ web_search gặp lỗi, kết quả có thể thiếu."}
+
+    conv_id = events[0]["data"]["conversation_id"]
+    rows = _pg("SELECT tool_calls FROM messages WHERE conversation_id = $1 AND role = 'assistant'",
+               uuid.UUID(conv_id))
+    trace = json.loads(rows[0]["tool_calls"])
+    assert [t["tool"] for t in trace] == ["web_search"]
+    assert all("code" not in t for t in trace)
+
+
+def test_stream_crash_emits_agent_crashed_error_then_answer(monkeypatch):
+    async def exploding(history, query, *, google_access_token=None, doc_ids=None):
+        yield {"type": "rewrite", "standalone_query": "q?"}
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(chat_mod, "run_agent", exploding)
+    with TestClient(app) as client:
+        token = _register(client)
+        resp = client.post("/chat", json={"message": "hỏi"},
+                           headers={"Authorization": f"Bearer {token}"})
+
+    events = _parse_sse(resp.text)
+    names = [e["event"] for e in events]
+    assert names == ["conversation", "rewrite", "error", "answer"]
+    assert events[2]["data"]["code"] == "agent_crashed"
+    assert events[2]["data"]["message"] == "Hệ thống gặp lỗi khi xử lý câu hỏi."
+    assert "❌" in events[3]["data"]["content"]
